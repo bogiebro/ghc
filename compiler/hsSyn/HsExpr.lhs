@@ -959,7 +959,7 @@ data StmtLR idL idR bodyL bodyR
       trS_bndrs :: [(idR, idR)],      -- See Note [TransStmt binder map]
 				
       trS_using :: LHsExpr idR,
-      trS_by :: Maybe bodyR,          -- "by e" (optional)
+      trS_by :: Maybe (LHsExpr idR),  -- "by e" (optional)
 	-- Invariant: if trS_form = GroupBy, then grp_by = Just e
 
       trS_ret :: SyntaxExpr idR,      -- The monomorphic 'return' function for 

@@ -210,10 +210,10 @@ mkHsIf c a b = HsIf (Just noSyntaxExpr) c a b
 mkNPat lit neg     = NPat lit neg noSyntaxExpr
 mkNPlusKPat id lit = NPlusKPat id lit noSyntaxExpr noSyntaxExpr
 
-mkTransformStmt    :: [LStmt idL (bodyL idL)] -> bodyR idR              -> StmtLR idL idR (bodyL idL) (bodyR idR)
-mkTransformByStmt  :: [LStmt idL (bodyL idL)] -> bodyR idR -> bodyR idR -> StmtLR idL idR (bodyL idL) (bodyR idR)
-mkGroupUsingStmt   :: [LStmt idL (bodyL idL)]              -> bodyR idR -> StmtLR idL idR (bodyL idL) (bodyR idR)
-mkGroupByUsingStmt :: [LStmt idL (bodyL idL)] -> bodyR idR -> bodyR idR -> StmtLR idL idR (bodyL idL) (bodyR idR)
+mkTransformStmt    :: [LStmt idL (bodyL idL)] -> LHsExpr idR                -> StmtLR idL idR (bodyL idL) (bodyR idR)
+mkTransformByStmt  :: [LStmt idL (bodyL idL)] -> LHsExpr idR -> LHsExpr idR -> StmtLR idL idR (bodyL idL) (bodyR idR)
+mkGroupUsingStmt   :: [LStmt idL (bodyL idL)]                -> LHsExpr idR -> StmtLR idL idR (bodyL idL) (bodyR idR)
+mkGroupByUsingStmt :: [LStmt idL (bodyL idL)] -> LHsExpr idR -> LHsExpr idR -> StmtLR idL idR (bodyL idL) (bodyR idR)
 
 emptyTransStmt :: StmtLR idL idR bodyL bodyR
 emptyTransStmt = TransStmt { trS_form = panic "emptyTransStmt: form"
@@ -330,10 +330,10 @@ nlHsDo ctxt stmts = noLoc (mkHsDo ctxt stmts)
 nlHsOpApp :: LHsExpr id -> id -> LHsExpr id -> LHsExpr id
 nlHsOpApp e1 op e2 = noLoc (mkHsOpApp e1 op e2)
 
-nlHsLam  :: LMatch id (HsExpr id) -> LHsExpr id
+nlHsLam  :: LMatch id (LHsExpr id) -> LHsExpr id
 nlHsPar  :: LHsExpr id -> LHsExpr id
 nlHsIf   :: LHsExpr id -> LHsExpr id -> LHsExpr id -> LHsExpr id
-nlHsCase :: LHsExpr id -> [LMatch id (HsExpr id)] -> LHsExpr id
+nlHsCase :: LHsExpr id -> [LMatch id (LHsExpr id)] -> LHsExpr id
 nlList   :: [LHsExpr id] -> LHsExpr id
 
 nlHsLam	match		= noLoc (HsLam (mkMatchGroup [match]))
@@ -413,7 +413,7 @@ l
 %************************************************************************
 
 \begin{code}
-mkFunBind :: Located RdrName -> [LMatch RdrName (HsExpr RdrName)] -> HsBind RdrName
+mkFunBind :: Located RdrName -> [LMatch RdrName (LHsExpr RdrName)] -> HsBind RdrName
 -- Not infix, with place holders for coercion and free vars
 mkFunBind fn ms = FunBind { fun_id = fn, fun_infix = False
                           , fun_matches = mkMatchGroup ms
@@ -421,7 +421,7 @@ mkFunBind fn ms = FunBind { fun_id = fn, fun_infix = False
                           , bind_fvs = placeHolderNames
 			  , fun_tick = Nothing }
 
-mkTopFunBind :: Located Name -> [LMatch Name (HsExpr Name)] -> HsBind Name
+mkTopFunBind :: Located Name -> [LMatch Name (LHsExpr Name)] -> HsBind Name
 -- In Name-land, with empty bind_fvs
 mkTopFunBind fn ms = FunBind { fun_id = fn, fun_infix = False
                              , fun_matches = mkMatchGroup ms
