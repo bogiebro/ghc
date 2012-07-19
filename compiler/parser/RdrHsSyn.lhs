@@ -39,6 +39,7 @@ module RdrHsSyn (
         bang_RDR,
         checkPatterns,        -- SrcLoc -> [HsExp] -> P [HsPat]
         checkMonadComp,       -- P (HsStmtContext RdrName)
+        checkCommand,         -- LHsExpr RdrName -> P (LHsCmd RdrName)
         checkValDef,          -- (SrcLoc, HsExp, HsRhs, [HsDecl]) -> P HsDecl
         checkValSig,          -- (SrcLoc, HsExp, HsRhs, [HsDecl]) -> P HsDecl
         checkDoAndIfThenElse,
@@ -807,6 +808,89 @@ checkMonadComp = do
     return $ if xopt Opt_MonadComprehensions (dflags pState)
                 then MonadComp
                 else ListComp
+
+-- -------------------------------------------------------------------------
+-- Checking arrow syntax.
+
+-- We parse arrow syntax as expressions and check for valid syntax below,
+-- converting the expression into a pattern at the same time.
+
+checkCommand :: LHsExpr RdrName -> P (LHsCmd RdrName)
+checkCommand lc = locMap checkCmd lc
+
+locMap :: (SrcLoc -> a -> P b) -> Located a -> P (Located b)
+locMap f (L l a) = f l a >>= (\b -> return $ L l b)
+
+checkCmd :: SrcSpan -> HsExpr RdrName -> P (HsCmd RdrName)
+checkCmd _ (HsArrApp e1 e2 ptt haat b) = 
+    return $ HsCmdArrApp e1 e2 ptt haat b
+checkCmd _ (HsArrForm e mf args) = 
+    return $ HsCmdArrForm e mf args
+checkCmd _ (HsApp e1 e2) = 
+    checkCommand e1 >>= (\c -> return $ HsCmdApp c e2)
+checkCmd _ (HsLam mg) = 
+    checkCmdMatchGroup mg >>= (\mg' -> return $ HsCmdLam mg')
+checkCmd _ (HsPar e) = 
+    checkCommand e >>= (\c -> return $ HsCmdPar c)
+checkCmd _ (HsCase e mg) = 
+    checkCmdMatchGroup mg >>= (\mg' -> return $ HsCmdCase e mg')
+checkCmd _ (HsIf cf ep et ee) = do
+    pt <- checkCommand et
+    pe <- checkCommand ee
+    return $ HsCmdIf cf ep pt pe
+checkCmd _ (HsLet lb e) = 
+    checkCommand e >>= (\c -> return $ HsCmdlet lb c)
+checkCmd _ (HsDo DoExpr stmts ty) = 
+    mapM checkCmdLStmt stmts >>= (\ss -> return $ HsCmdDo ss ty)
+checkCmd _ (OpApp eLeft op fixity eRight) = do
+    c1 <- checkCommand eLeft
+    c2 <- checkCommand eRight
+    let arg1 = L (getLoc c1) $ HsCmdTop pl [] placeHolderType []
+        arg2 = L (getLoc c2) $ HsCmdTop pl [] placeHolderType []
+    return $ HsCmdArrForm op (Just fixity) [arg1, arg2]
+
+checkCmd l e = cmdFail l e
+
+checkCmdLStmt :: LStmt RdrName LHsExpr -> P (LStmt RdrName LHsCmd)
+checkCmdLStmt = locMap checkCmdStmt
+
+checkCmdStmt :: SrcSpan -> Stmt RdrName LHsExpr -> P (Stmt RdrName LHsCmd)
+checkCmdStmt _ (LastStmt e r) = 
+    checkCommand e >>= (\c -> return $ LastStmt c r)
+checkCmdStmt _ (BindStmt pat cmd b f) = 
+    checkCommand e >>= (\c -> return $ BindStmt pat c b f)
+checkCmdStmt _ (ExprStmt e t g ty) = 
+    checkCommand e >>= (\c -> return $ ExprStmt c t g ty)
+checkCmdStmt _ stmt@(RecStmt { recS_stmts = stmts }) = do
+    ss <- mapM checkCmdLStmt stmts
+    return $ stmt { recS_stmts = ss }
+checkCmdStmt l stmt = cmdStmtFail l stmt
+
+checkCmdMatchGroup :: MatchGroup RdrName LHsExpr -> P (MatchGroup RdrName LHsCmd)
+checkCmdMatchGroup (MatchGroup ms ty) = do
+    ms' <- mapM (locMap $ const convert) ms
+    return $ MatchGroup ms' ty
+    where convert (Match pat mty grhss) = do
+            grhss' <- checkCmdGRHSs grhss
+            return $ Match pat mty grhss'
+
+checkCmdGRHSs :: GRHSs RdrName LHsExpr -> P (GRHSs RdrName LHsCmd)
+checkCmdGRHSs (GRHSs grhss binds) = do
+    grhss' <- mapM checkCmdGRHS grhss
+    return $ GRHSs grhss' binds
+
+checkCmdGRHS :: LGRHS RdrName LHsExpr -> P (LGRHS RdrName LHsCmd)
+checkCmdGRHS = locMap $ const convert
+  where 
+    convert (GRHS stmts e) = 
+        checkCommand e >>= (\c -> GRHS stmts c)
+
+
+cmdFail :: SrcSpan -> HsExpr RdrName -> P a
+cmdFail loc e = parseErrorSDoc loc (text "Parse error in command:" <+> ppr e)
+cmdStmtFail :: SrcSpan -> Stmt RdrName LHsExpr -> P a
+cmdStmtFail loc e = parseErrorSDoc loc 
+                    (text "Parse error in command statement:" <+> ppr e)
 
 ---------------------------------------------------------------------------
 -- Miscellaneous utilities

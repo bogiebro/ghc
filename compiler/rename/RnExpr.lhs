@@ -221,12 +221,12 @@ rnExpr (HsTickPragma info expr)
     return (HsTickPragma info expr', fvs_expr)
 
 rnExpr (HsLam matches)
-  = rnMatchGroup LambdaExpr matches	`thenM` \ (matches', fvMatch) ->
+  = rnMatchGroup LambdaExpr rnLExpr matches     `thenM` \ (matches', fvMatch) ->
     return (HsLam matches', fvMatch)
 
 rnExpr (HsCase expr matches)
-  = rnLExpr expr		 	`thenM` \ (new_expr, e_fvs) ->
-    rnMatchGroup CaseAlt matches	`thenM` \ (new_matches, ms_fvs) ->
+  = rnLExpr expr                                `thenM` \ (new_expr, e_fvs) ->
+    rnMatchGroup CaseAlt rnLExpr matches        `thenM` \ (new_matches, ms_fvs) ->
     return (HsCase new_expr new_matches, e_fvs `plusFV` ms_fvs)
 
 rnExpr (HsLet binds expr)
@@ -235,7 +235,7 @@ rnExpr (HsLet binds expr)
     return (HsLet binds' expr', fvExpr)
 
 rnExpr (HsDo do_or_lc stmts _)
-  = do 	{ ((stmts', _), fvs) <- rnStmts do_or_lc stmts (\ _ -> return ((), emptyFVs))
+  = do 	{ ((stmts', _), fvs) <- rnStmts do_or_lc rnLExpr stmts (\ _ -> return ((), emptyFVs))
 	; return ( HsDo do_or_lc stmts' placeHolderType, fvs ) }
 
 rnExpr (ExplicitList _ exps)
@@ -317,37 +317,6 @@ rnExpr (HsProc pat body)
     rnCmdTop body	         `thenM` \ (body',fvBody) ->
     return (HsProc pat' body', fvBody)
 
-rnExpr (HsArrApp arrow arg _ ho rtl)
-  = select_arrow_scope (rnLExpr arrow)	`thenM` \ (arrow',fvArrow) ->
-    rnLExpr arg				`thenM` \ (arg',fvArg) ->
-    return (HsArrApp arrow' arg' placeHolderType ho rtl,
-	     fvArrow `plusFV` fvArg)
-  where
-    select_arrow_scope tc = case ho of
-        HsHigherOrderApp -> tc
-        HsFirstOrderApp  -> escapeArrowScope tc
-
--- infix form
-rnExpr (HsArrForm op (Just _) [arg1, arg2])
-  = escapeArrowScope (rnLExpr op)
-			`thenM` \ (op',fv_op) ->
-    let L _ (HsVar op_name) = op' in
-    rnCmdTop arg1	`thenM` \ (arg1',fv_arg1) ->
-    rnCmdTop arg2	`thenM` \ (arg2',fv_arg2) ->
-
-	-- Deal with fixity
-
-    lookupFixityRn op_name		`thenM` \ fixity ->
-    mkOpFormRn arg1' op' fixity arg2'	`thenM` \ final_e -> 
-
-    return (final_e,
-	      fv_arg1 `plusFV` fv_op `plusFV` fv_arg2)
-
-rnExpr (HsArrForm op fixity cmds)
-  = escapeArrowScope (rnLExpr op)	`thenM` \ (op',fvOp) ->
-    rnCmdArgs cmds			`thenM` \ (cmds',fvCmds) ->
-    return (HsArrForm op' fixity cmds', fvOp `plusFV` fvCmds)
-
 rnExpr other = pprPanic "rnExpr: unexpected expression" (ppr other)
 	-- HsWrap
 
@@ -407,7 +376,7 @@ rnCmdTop :: LHsCmdTop RdrName -> RnM (LHsCmdTop Name, FreeVars)
 rnCmdTop = wrapLocFstM rnCmdTop'
  where
   rnCmdTop' (HsCmdTop cmd _ _ _) 
-   = rnLExpr (convertOpFormsLCmd cmd) `thenM` \ (cmd', fvCmd) ->
+   = rnLCmd cmd `thenM` \ (cmd', fvCmd) ->
      let 
 	cmd_names = [arrAName, composeAName, firstAName] ++
 		    nameSetToList (methodNamesCmd (unLoc cmd'))
@@ -418,6 +387,79 @@ rnCmdTop = wrapLocFstM rnCmdTop'
      return (HsCmdTop cmd' [] placeHolderType cmd_names', 
 	     fvCmd `plusFV` cmd_fvs)
 
+rnLCmd :: LHsCmd RdrName -> RnM (LHsCmd Name, FreeVars)
+rnLCmd = wrapLocFstM rnExpr
+
+rnCmd :: HsCmd RdrName -> RnM (HsCmd Name, FreeVars)
+
+rnCmd (HsCmdArrApp arrow arg _ ho rtl)
+  = select_arrow_scope (rnLExpr arrow)  `thenM` \ (arrow',fvArrow) ->
+    rnLExpr arg                         `thenM` \ (arg',fvArg) ->
+    return (HsCmdArrApp arrow' arg' placeHolderType ho rtl,
+             fvArrow `plusFV` fvArg)
+  where
+    select_arrow_scope tc = case ho of
+        HsHigherOrderApp -> tc
+        HsFirstOrderApp  -> escapeArrowScope tc
+
+-- infix form
+rnCmd (HsCmdArrForm op (Just _) [arg1, arg2])
+  = escapeArrowScope (rnLExpr op)
+                        `thenM` \ (op',fv_op) ->
+    let L _ (HsVar op_name) = op' in
+    rnCmdTop arg1       `thenM` \ (arg1',fv_arg1) ->
+    rnCmdTop arg2       `thenM` \ (arg2',fv_arg2) ->
+
+        -- Deal with fixity
+
+    lookupFixityRn op_name              `thenM` \ fixity ->
+    mkOpFormRn arg1' op' fixity arg2'   `thenM` \ final_e -> 
+
+    return (final_e,
+              fv_arg1 `plusFV` fv_op `plusFV` fv_arg2)
+
+rnCmd (HsCmdArrForm op fixity cmds)
+  = escapeArrowScope (rnLExpr op)       `thenM` \ (op',fvOp) ->
+    rnCmdArgs cmds                      `thenM` \ (cmds',fvCmds) ->
+    return (HsCmdArrForm op' fixity cmds', fvOp `plusFV` fvCmds)
+
+rnCmd (HsCmdApp fun arg)
+  = rnLCmd  fun         `thenM` \ (fun',fvFun) ->
+    rnLExpr arg         `thenM` \ (arg',fvArg) ->
+    return (HsCmdApp fun' arg', fvFun `plusFV` fvArg)
+
+rnCmd (HsCmdLam matches)
+  = rnMatchGroup LambdaExpr rnLCmd matches     `thenM` \ (matches', fvMatch) ->
+    return (HsCmdLam matches', fvMatch)
+
+rnCmd (HsCmdPar e)
+  = do  { (e', fvs_e) <- rnLCmd e
+        ; return (HsCmdPar e', fvs_e) }
+
+rnCmd (HsCmdCase expr matches)
+  = rnLExpr expr                        `thenM` \ (new_expr, e_fvs) ->
+    rnMatchGroup CaseAlt rnLCmd matches `thenM` \ (new_matches, ms_fvs) ->
+    return (HsCmdCase new_expr new_matches, e_fvs `plusFV` ms_fvs)
+
+rnCmd (HsCmdIf _ p b1 b2)
+  = do { (p', fvP) <- rnLExpr p
+       ; (b1', fvB1) <- rnLCmd b1
+       ; (b2', fvB2) <- rnLCmd b2
+       ; (mb_ite, fvITE) <- lookupIfThenElse
+       ; return (HsIf mb_ite p' b1' b2', plusFVs [fvITE, fvP, fvB1, fvB2]) }
+
+rnCmd (HsCmdLet binds cmd)
+  = rnLocalBindsAndThen binds           $ \ binds' ->
+    rnLCmd cmd                         `thenM` \ (cmd',fvExpr) ->
+    return (HsCmdLet binds' cmd', fvExpr)
+
+rnCmd (HsCmdDo do_or_lc stmts _)
+  = do  { ((stmts', _), fvs) <- rnStmts do_or_lc rnLCmd stmts (\ _ -> return ((), emptyFVs))
+        ; return ( HsCmdDo do_or_lc stmts' placeHolderType, fvs ) }
+
+
+
+{- DEPRACATED
 ---------------------------------------------------
 -- convert OpApp's in a command context to HsArrForm's
 
@@ -478,6 +520,7 @@ convertOpFormsGRHS :: Located (GRHS id) -> Located (GRHS id)
 convertOpFormsGRHS = fmap convert
  where 
    convert (GRHS stmts cmd) = GRHS stmts (convertOpFormsLCmd cmd)
+-}
 
 ---------------------------------------------------
 type CmdNeeds = FreeVars	-- Only inhabitants are 

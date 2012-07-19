@@ -1406,8 +1406,9 @@ exp10 :: { LHsExpr RdrName }
 
         | 'proc' aexp '->' exp  
                         {% checkPattern $2 >>= \ p -> 
-                           return (LL $ HsProc p (LL $ HsCmdTop $4 [] 
-                                                   placeHolderType undefined)) }
+                            cmd <- checkCommand $4
+                            return (LL $ HsProc p (LL $ HsCmdTop cmd [] 
+                                                    placeHolderType undefined)) }
                                                 -- TODO: is LL right here?
 
         | '{-# CORE' STRING '#-}' exp           { LL $ HsCoreAnn (getSTRING $2) $4 }

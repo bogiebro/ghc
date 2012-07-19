@@ -746,16 +746,25 @@ okHsSig ctxt (L _ sig)
 %************************************************************************
 
 \begin{code}
-rnMatchGroup :: HsMatchContext Name -> MatchGroup RdrName -> RnM (MatchGroup Name, FreeVars)
-rnMatchGroup ctxt (MatchGroup ms _) 
-  = do { (new_ms, ms_fvs) <- mapFvRn (rnMatch ctxt) ms
+rnMatchGroup :: HsMatchContext Name 
+             -> (body RdrName -> RnM (body Name, FreeVars))
+             -> MatchGroup RdrName body 
+             -> RnM (MatchGroup Name body, FreeVars)
+rnMatchGroup ctxt rnBody (MatchGroup ms _) 
+  = do { (new_ms, ms_fvs) <- mapFvRn (rnMatch ctxt rnBody) ms
        ; return (MatchGroup new_ms placeHolderType, ms_fvs) }
 
-rnMatch :: HsMatchContext Name -> LMatch RdrName -> RnM (LMatch Name, FreeVars)
-rnMatch ctxt  = wrapLocFstM (rnMatch' ctxt)
+rnMatch :: HsMatchContext Name 
+        -> (body RdrName -> RnM (body Name, FreeVars))
+        -> LMatch RdrName body 
+        -> RnM (LMatch Name body, FreeVars)
+rnMatch ctxt rnBody = wrapLocFstM (rnMatch' ctxt rnBody)
 
-rnMatch' :: HsMatchContext Name -> Match RdrName -> RnM (Match Name, FreeVars)
-rnMatch' ctxt match@(Match pats maybe_rhs_sig grhss)
+rnMatch' :: HsMatchContext Name 
+         -> (body RdrName -> RnM (body Name, FreeVars))
+         -> Match RdrName body 
+         -> RnM (Match Name body, FreeVars)
+rnMatch' ctxt rnBody match@(Match pats maybe_rhs_sig grhss)
   = do 	{ 	-- Result type signatures are no longer supported
 	  case maybe_rhs_sig of	
 	        Nothing -> return ()
@@ -764,11 +773,11 @@ rnMatch' ctxt match@(Match pats maybe_rhs_sig grhss)
 	       -- Now the main event
 	       -- note that there are no local ficity decls for matches
 	; rnPats ctxt pats	$ \ pats' -> do
-	{ (grhss', grhss_fvs) <- rnGRHSs ctxt grhss
+	{ (grhss', grhss_fvs) <- rnGRHSs ctxt rnBody grhss
 
 	; return (Match pats' Nothing grhss', grhss_fvs) }}
 
-resSigErr :: HsMatchContext Name -> Match RdrName -> HsType RdrName -> SDoc 
+resSigErr :: HsMatchContext Name -> Match RdrName body -> HsType RdrName -> SDoc 
 resSigErr ctxt match ty
    = vcat [ ptext (sLit "Illegal result type signature") <+> quotes (ppr ty)
 	  , nest 2 $ ptext (sLit "Result signatures are no longer supported in pattern matches")
@@ -783,21 +792,29 @@ resSigErr ctxt match ty
 %************************************************************************
 
 \begin{code}
-rnGRHSs :: HsMatchContext Name -> GRHSs RdrName -> RnM (GRHSs Name, FreeVars)
-
-rnGRHSs ctxt (GRHSs grhss binds)
+rnGRHSs :: HsMatchContext Name 
+        -> (body RdrName -> RnM (body Name, FreeVars))
+        -> GRHSs RdrName body 
+        -> RnM (GRHSs Name body, FreeVars)
+rnGRHSs ctxt rnBody (GRHSs grhss binds)
   = rnLocalBindsAndThen binds	$ \ binds' -> do
-    (grhss', fvGRHSs) <- mapFvRn (rnGRHS ctxt) grhss
+    (grhss', fvGRHSs) <- mapFvRn (rnGRHS ctxt rnBody) grhss
     return (GRHSs grhss' binds', fvGRHSs)
 
-rnGRHS :: HsMatchContext Name -> LGRHS RdrName -> RnM (LGRHS Name, FreeVars)
-rnGRHS ctxt = wrapLocFstM (rnGRHS' ctxt)
+rnGRHS :: HsMatchContext Name 
+       -> (body RdrName -> RnM (body Name, FreeVars))
+       -> LGRHS RdrName body 
+       -> RnM (LGRHS Name body, FreeVars)
+rnGRHS ctxt rnBody = wrapLocFstM (rnGRHS' ctxt rnBody)
 
-rnGRHS' :: HsMatchContext Name -> GRHS RdrName -> RnM (GRHS Name, FreeVars)
-rnGRHS' ctxt (GRHS guards rhs)
+rnGRHS' :: HsMatchContext Name 
+        -> (body RdrName -> RnM (body Name, FreeVars))
+        -> GRHS RdrName body 
+        -> RnM (GRHS Name body, FreeVars)
+rnGRHS' ctxt rnBody (GRHS guards rhs)
   = do	{ pattern_guards_allowed <- xoptM Opt_PatternGuards
-        ; ((guards', rhs'), fvs) <- rnStmts (PatGuard ctxt) guards $ \ _ ->
-				    rnLExpr rhs
+        ; ((guards', rhs'), fvs) <- rnStmts (PatGuard ctxt) rnBody guards $ \ _ ->
+				    rnBody rhs
 
 	; unless (pattern_guards_allowed || is_standard_guard guards')
 	  	 (addWarn (nonStdGuardErr guards'))
@@ -849,7 +866,7 @@ bindsInHsBootFile mbinds
   = hang (ptext (sLit "Bindings in hs-boot files are not allowed"))
        2 (ppr mbinds)
 
-nonStdGuardErr :: [LStmtLR Name Name] -> SDoc
+nonStdGuardErr :: [LStmtLR Name Name body] -> SDoc
 nonStdGuardErr guards
   = hang (ptext (sLit "accepting non-standard pattern guards (use -XPatternGuards to suppress this message)"))
        4 (interpp'SP guards)

@@ -444,6 +444,7 @@ tcExpr (HsProc pat cmd) res_ty
   = do	{ (pat', cmd', coi) <- tcProc pat cmd res_ty
 	; return $ mkHsWrapCo coi (HsProc pat' cmd') }
 
+{-
 tcExpr e@(HsArrApp _ _ _ _ _) _
   = failWithTc (vcat [ptext (sLit "The arrow command"), nest 2 (ppr e), 
                       ptext (sLit "was found where an expression was expected")])
@@ -451,6 +452,7 @@ tcExpr e@(HsArrApp _ _ _ _ _) _
 tcExpr e@(HsArrForm _ _ _) _
   = failWithTc (vcat [ptext (sLit "The arrow command"), nest 2 (ppr e), 
                       ptext (sLit "was found where an expression was expected")])
+-}
 \end{code}
 
 Note [Rebindable syntax for if]
