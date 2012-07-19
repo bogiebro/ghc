@@ -234,7 +234,8 @@ data HsExpr id
 
   ---------------------------------------
   -- The following are commands, not expressions proper
-{-
+  -- They are only used in the parsing stage and are removed 
+  --    immediately in parser.RdrHsSyn.checkCommand
   | HsArrApp            -- Arrow tail, or arrow application (f -< arg)
         (LHsExpr id)    -- arrow expression, f
         (LHsExpr id)    -- input expression, arg
@@ -251,7 +252,6 @@ data HsExpr id
         (Maybe Fixity)  -- fixity (filled in by the renamer), for forms that
                         -- were converted from OpApp's by the renamer
         [LHsCmdTop id]  -- argument commands
--}
 
   ---------------------------------------
   -- Haskell program coverage (Hpc) Support
@@ -530,6 +530,21 @@ ppr_expr (HsTickPragma externalSrcLoc exp)
           ptext (sLit ">("),
           ppr exp,
           ptext (sLit ")")]
+
+ppr_expr (HsArrApp arrow arg _ HsFirstOrderApp True)
+  = hsep [ppr_lexpr arrow, ptext (sLit "-<"), ppr_lexpr arg]
+ppr_expr (HsArrApp arrow arg _ HsFirstOrderApp False)
+  = hsep [ppr_lexpr arg, ptext (sLit ">-"), ppr_lexpr arrow]
+ppr_expr (HsArrApp arrow arg _ HsHigherOrderApp True)
+  = hsep [ppr_lexpr arrow, ptext (sLit "-<<"), ppr_lexpr arg]
+ppr_expr (HsArrApp arrow arg _ HsHigherOrderApp False)
+  = hsep [ppr_lexpr arg, ptext (sLit ">>-"), ppr_lexpr arrow]
+
+ppr_expr (HsArrForm (L _ (HsVar v)) (Just _) [arg1, arg2])
+  = sep [pprCmdArg (unLoc arg1), hsep [pprInfixOcc v, pprCmdArg (unLoc arg2)]]
+ppr_expr (HsArrForm op _ args)
+  = hang (ptext (sLit "(|") <> ppr_lexpr op)
+         4 (sep (map (pprCmdArg.unLoc) args) <> ptext (sLit "|)"))
 
 \end{code}
 

@@ -313,7 +313,7 @@ getMonoBind (L loc1 (FunBind { fun_id = fun_id1@(L _ f1), fun_infix = is_infix1,
 
 getMonoBind bind binds = (bind, binds)
 
-has_args :: [LMatch RdrName] -> Bool
+has_args :: [LMatch RdrName (LHsExpr RdrName)] -> Bool
 has_args []                           = panic "RdrHsSyn:has_args"
 has_args ((L _ (Match args _ _)) : _) = not (null args)
         -- Don't group together FunBinds if they have
@@ -638,7 +638,7 @@ patFail loc e = parseErrorSDoc loc (text "Parse error in pattern:" <+> ppr e)
 
 checkValDef :: LHsExpr RdrName
             -> Maybe (LHsType RdrName)
-            -> Located (GRHSs RdrName)
+            -> Located (GRHSs RdrName (LHsExpr RdrName))
             -> P (HsBind RdrName)
 
 checkValDef lhs (Just sig) grhss
@@ -657,7 +657,7 @@ checkFunBind :: SrcSpan
              -> Bool
              -> [LHsExpr RdrName]
              -> Maybe (LHsType RdrName)
-             -> Located (GRHSs RdrName)
+             -> Located (GRHSs RdrName (LHsExpr RdrName))
              -> P (HsBind RdrName)
 checkFunBind lhs_loc fun is_infix pats opt_sig (L rhs_span grhss)
   = do  ps <- checkPatterns pats
@@ -666,14 +666,14 @@ checkFunBind lhs_loc fun is_infix pats opt_sig (L rhs_span grhss)
         -- The span of the match covers the entire equation.
         -- That isn't quite right, but it'll do for now.
 
-makeFunBind :: Located id -> Bool -> [LMatch id] -> HsBind id
+makeFunBind :: Located id -> Bool -> [LMatch id (LHsExpr id)] -> HsBind id
 -- Like HsUtils.mkFunBind, but we need to be able to set the fixity too
 makeFunBind fn is_infix ms
   = FunBind { fun_id = fn, fun_infix = is_infix, fun_matches = mkMatchGroup ms,
               fun_co_fn = idHsWrapper, bind_fvs = placeHolderNames, fun_tick = Nothing }
 
 checkPatBind :: LHsExpr RdrName
-             -> Located (GRHSs RdrName)
+             -> Located (GRHSs RdrName (LHsExpr RdrName))
              -> P (HsBind RdrName)
 checkPatBind lhs (L _ grhss)
   = do  { lhs <- checkPattern lhs
@@ -818,7 +818,7 @@ checkMonadComp = do
 checkCommand :: LHsExpr RdrName -> P (LHsCmd RdrName)
 checkCommand lc = locMap checkCmd lc
 
-locMap :: (SrcLoc -> a -> P b) -> Located a -> P (Located b)
+locMap :: (SrcSpan -> a -> P b) -> Located a -> P (Located b)
 locMap f (L l a) = f l a >>= (\b -> return $ L l b)
 
 checkCmd :: SrcSpan -> HsExpr RdrName -> P (HsCmd RdrName)
@@ -839,25 +839,25 @@ checkCmd _ (HsIf cf ep et ee) = do
     pe <- checkCommand ee
     return $ HsCmdIf cf ep pt pe
 checkCmd _ (HsLet lb e) = 
-    checkCommand e >>= (\c -> return $ HsCmdlet lb c)
+    checkCommand e >>= (\c -> return $ HsCmdLet lb c)
 checkCmd _ (HsDo DoExpr stmts ty) = 
     mapM checkCmdLStmt stmts >>= (\ss -> return $ HsCmdDo ss ty)
 checkCmd _ (OpApp eLeft op fixity eRight) = do
     c1 <- checkCommand eLeft
     c2 <- checkCommand eRight
-    let arg1 = L (getLoc c1) $ HsCmdTop pl [] placeHolderType []
-        arg2 = L (getLoc c2) $ HsCmdTop pl [] placeHolderType []
+    let arg1 = L (getLoc c1) $ HsCmdTop c1 [] placeHolderType []
+        arg2 = L (getLoc c2) $ HsCmdTop c2 [] placeHolderType []
     return $ HsCmdArrForm op (Just fixity) [arg1, arg2]
 
 checkCmd l e = cmdFail l e
 
-checkCmdLStmt :: LStmt RdrName LHsExpr -> P (LStmt RdrName LHsCmd)
+checkCmdLStmt :: LStmt RdrName (LHsExpr RdrName) -> P (LStmt RdrName (LHsCmd RdrName))
 checkCmdLStmt = locMap checkCmdStmt
 
-checkCmdStmt :: SrcSpan -> Stmt RdrName LHsExpr -> P (Stmt RdrName LHsCmd)
+checkCmdStmt :: SrcSpan -> Stmt RdrName (LHsExpr RdrName) -> P (Stmt RdrName (LHsCmd RdrName))
 checkCmdStmt _ (LastStmt e r) = 
     checkCommand e >>= (\c -> return $ LastStmt c r)
-checkCmdStmt _ (BindStmt pat cmd b f) = 
+checkCmdStmt _ (BindStmt pat e b f) = 
     checkCommand e >>= (\c -> return $ BindStmt pat c b f)
 checkCmdStmt _ (ExprStmt e t g ty) = 
     checkCommand e >>= (\c -> return $ ExprStmt c t g ty)
@@ -866,7 +866,7 @@ checkCmdStmt _ stmt@(RecStmt { recS_stmts = stmts }) = do
     return $ stmt { recS_stmts = ss }
 checkCmdStmt l stmt = cmdStmtFail l stmt
 
-checkCmdMatchGroup :: MatchGroup RdrName LHsExpr -> P (MatchGroup RdrName LHsCmd)
+checkCmdMatchGroup :: MatchGroup RdrName (LHsExpr RdrName) -> P (MatchGroup RdrName (LHsCmd RdrName))
 checkCmdMatchGroup (MatchGroup ms ty) = do
     ms' <- mapM (locMap $ const convert) ms
     return $ MatchGroup ms' ty
@@ -874,21 +874,23 @@ checkCmdMatchGroup (MatchGroup ms ty) = do
             grhss' <- checkCmdGRHSs grhss
             return $ Match pat mty grhss'
 
-checkCmdGRHSs :: GRHSs RdrName LHsExpr -> P (GRHSs RdrName LHsCmd)
+checkCmdGRHSs :: GRHSs RdrName (LHsExpr RdrName) -> P (GRHSs RdrName (LHsCmd RdrName))
 checkCmdGRHSs (GRHSs grhss binds) = do
     grhss' <- mapM checkCmdGRHS grhss
     return $ GRHSs grhss' binds
 
-checkCmdGRHS :: LGRHS RdrName LHsExpr -> P (LGRHS RdrName LHsCmd)
+checkCmdGRHS :: LGRHS RdrName (LHsExpr RdrName) -> P (LGRHS RdrName (LHsCmd RdrName))
 checkCmdGRHS = locMap $ const convert
   where 
-    convert (GRHS stmts e) = 
-        checkCommand e >>= (\c -> GRHS stmts c)
+    convert (GRHS stmts e) = do
+        c <- checkCommand e
+        cmdStmts <- mapM checkCmdLStmt stmts
+        return $ GRHS cmdStmts c
 
 
 cmdFail :: SrcSpan -> HsExpr RdrName -> P a
 cmdFail loc e = parseErrorSDoc loc (text "Parse error in command:" <+> ppr e)
-cmdStmtFail :: SrcSpan -> Stmt RdrName LHsExpr -> P a
+cmdStmtFail :: SrcSpan -> Stmt RdrName (LHsExpr RdrName) -> P a
 cmdStmtFail loc e = parseErrorSDoc loc 
                     (text "Parse error in command statement:" <+> ppr e)
 
