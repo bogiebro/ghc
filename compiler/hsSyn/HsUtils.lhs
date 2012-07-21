@@ -210,10 +210,14 @@ mkHsIf c a b = HsIf (Just noSyntaxExpr) c a b
 mkNPat lit neg     = NPat lit neg noSyntaxExpr
 mkNPlusKPat id lit = NPlusKPat id lit noSyntaxExpr noSyntaxExpr
 
-mkTransformStmt    :: [LStmt idL (bodyL idL)] -> LHsExpr idR                -> StmtLR idL idR (bodyL idL) (bodyR idR)
-mkTransformByStmt  :: [LStmt idL (bodyL idL)] -> LHsExpr idR -> LHsExpr idR -> StmtLR idL idR (bodyL idL) (bodyR idR)
-mkGroupUsingStmt   :: [LStmt idL (bodyL idL)]                -> LHsExpr idR -> StmtLR idL idR (bodyL idL) (bodyR idR)
-mkGroupByUsingStmt :: [LStmt idL (bodyL idL)] -> LHsExpr idR -> LHsExpr idR -> StmtLR idL idR (bodyL idL) (bodyR idR)
+mkTransformStmt    :: [LStmt idL (Located (bodyL idL))] -> LHsExpr idR
+                   -> StmtLR idL idR (Located (bodyL idL)) (Located (bodyR idR))
+mkTransformByStmt  :: [LStmt idL (Located (bodyL idL))] -> LHsExpr idR -> LHsExpr idR
+                   -> StmtLR idL idR (Located (bodyL idL)) (Located (bodyR idR))
+mkGroupUsingStmt   :: [LStmt idL (Located (bodyL idL))]                -> LHsExpr idR
+                   -> StmtLR idL idR (Located (bodyL idL)) (Located (bodyR idR))
+mkGroupByUsingStmt :: [LStmt idL (Located (bodyL idL))] -> LHsExpr idR -> LHsExpr idR
+                   -> StmtLR idL idR (Located (bodyL idL)) (Located (bodyR idR))
 
 emptyTransStmt :: StmtLR idL idR bodyL bodyR
 emptyTransStmt = TransStmt { trS_form = panic "emptyTransStmt: form"

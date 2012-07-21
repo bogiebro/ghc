@@ -1501,7 +1501,8 @@ cmdargs :: { [LHsCmdTop RdrName] }
         | {- empty -}                   { [] }
 
 acmd    :: { LHsCmdTop RdrName }
-        : aexp2                 { L1 $ HsCmdTop $1 [] placeHolderType undefined }
+        : aexp2                 {% checkCommand $1 >>= \ cmd ->
+                                    return (L1 $ HsCmdTop cmd [] placeHolderType undefined) }
 
 cvtopbody :: { [LHsDecl RdrName] }
         :  '{'            cvtopdecls0 '}'               { $2 }
