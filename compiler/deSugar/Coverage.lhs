@@ -610,13 +610,13 @@ addTickGRHSBody isOneOfMany isLambda expr@(L pos e0) = do
     _otherwise ->
        addTickLHsExprRHS expr
 
-addTickLStmts :: (Maybe (Bool -> BoxLabel)) -> [LStmt Id (LHsExpr Id)] -> TM [LStmt Id (LHsExpr Id)]
+addTickLStmts :: (Maybe (Bool -> BoxLabel)) -> [ExprLStmt Id] -> TM [ExprLStmt Id]
 addTickLStmts isGuard stmts = do
   (stmts, _) <- addTickLStmts' isGuard stmts (return ())
   return stmts
 
-addTickLStmts' :: (Maybe (Bool -> BoxLabel)) -> [LStmt Id (LHsExpr Id)] -> TM a
-               -> TM ([LStmt Id (LHsExpr Id)], a)
+addTickLStmts' :: (Maybe (Bool -> BoxLabel)) -> [ExprLStmt Id] -> TM a
+               -> TM ([ExprLStmt Id], a)
 addTickLStmts' isGuard lstmts res
   = bindLocals (collectLStmtsBinders lstmts) $
     do { lstmts' <- mapM (liftL (addTickStmt isGuard)) lstmts
@@ -634,8 +634,8 @@ addTickStmt _isGuard (BindStmt pat e bind fail) = do
                 (addTickLHsExprRHS e)
                 (addTickSyntaxExpr hpcSrcSpan bind)
                 (addTickSyntaxExpr hpcSrcSpan fail)
-addTickStmt isGuard (ExprStmt e bind' guard' ty) = do
-        liftM4 ExprStmt
+addTickStmt isGuard (BodyStmt e bind' guard' ty) = do
+        liftM4 BodyStmt
                 (addTick isGuard e)
                 (addTickSyntaxExpr hpcSrcSpan bind')
                 (addTickSyntaxExpr hpcSrcSpan guard')
@@ -674,8 +674,8 @@ addTick :: Maybe (Bool -> BoxLabel) -> LHsExpr Id -> TM (LHsExpr Id)
 addTick isGuard e | Just fn <- isGuard = addBinTickLHsExpr fn e
                   | otherwise          = addTickLHsExprRHS e
 
-addTickStmtAndBinders :: Maybe (Bool -> BoxLabel) -> ParStmtBlock Id Id (LHsExpr Id)
-                      -> TM (ParStmtBlock Id Id (LHsExpr Id))
+addTickStmtAndBinders :: Maybe (Bool -> BoxLabel) -> ParStmtBlock Id Id
+                      -> TM (ParStmtBlock Id Id)
 addTickStmtAndBinders isGuard (ParStmtBlock stmts ids returnExpr) =
     liftM3 ParStmtBlock
         (addTickLStmts isGuard stmts)
@@ -808,7 +808,7 @@ addTickCmdGRHS :: GRHS Id (LHsCmd Id) -> TM (GRHS Id (LHsCmd Id))
 -- The *guards* are *not* Cmds, although the body is
 -- C.f. addTickGRHS for the BinBox stuff
 addTickCmdGRHS (GRHS stmts cmd)
-  = do { (stmts',expr') <- addTickLCmdStmts' --(Just $ BinBox $ GuardBinBox)
+  = do { (stmts',expr') <- addTickLStmts' (Just $ BinBox $ GuardBinBox)
                                    stmts (addTickLHsCmd cmd)
        ; return $ GRHS stmts' expr' }
 
@@ -837,8 +837,8 @@ addTickCmdStmt (LastStmt c ret) = do
         liftM2 LastStmt
                 (addTickLHsCmd c)
                 (addTickSyntaxExpr hpcSrcSpan ret)
-addTickCmdStmt (ExprStmt c bind' guard' ty) = do
-        liftM4 ExprStmt
+addTickCmdStmt (BodyStmt c bind' guard' ty) = do
+        liftM4 BodyStmt
                 (addTickLHsCmd c)
                 (addTickSyntaxExpr hpcSrcSpan bind')
                 (addTickSyntaxExpr hpcSrcSpan guard')

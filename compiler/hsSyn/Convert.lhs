@@ -636,7 +636,7 @@ cvtHsDo do_or_lc stmts
         ; let Just (stmts'', last') = snocView stmts'
 
 	; last'' <- case last' of
-		      L loc (ExprStmt body _ _ _) -> return (L loc (mkLastStmt body))
+		      L loc (BodyStmt body _ _ _) -> return (L loc (mkLastStmt body))
                       _ -> failWith (bad_last last')
 
 	; return $ HsDo do_or_lc (stmts'' ++ [last'']) void }
@@ -649,7 +649,7 @@ cvtStmts :: [TH.Stmt] -> CvtM [Hs.LStmt RdrName]
 cvtStmts = mapM cvtStmt
 
 cvtStmt :: TH.Stmt -> CvtM (Hs.LStmt RdrName)
-cvtStmt (NoBindS e)    = do { e' <- cvtl e; returnL $ mkExprStmt e' }
+cvtStmt (NoBindS e)    = do { e' <- cvtl e; returnL $ mkBodyStmt e' }
 cvtStmt (TH.BindS p e) = do { p' <- cvtPat p; e' <- cvtl e; returnL $ mkBindStmt p' e' }
 cvtStmt (TH.LetS ds)   = do { ds' <- cvtLocalDecs (ptext (sLit "a let binding")) ds
                             ; returnL $ LetStmt ds' }
@@ -670,7 +670,7 @@ cvtGuard (NormalB e)      = do { e' <- cvtl e; g' <- returnL $ GRHS [] e'; retur
 
 cvtpair :: (TH.Guard, TH.Exp) -> CvtM (LGRHS RdrName)
 cvtpair (NormalG ge,rhs) = do { ge' <- cvtl ge; rhs' <- cvtl rhs
-			      ; g' <- returnL $ mkExprStmt ge'
+			      ; g' <- returnL $ mkBodyStmt ge'
 			      ; returnL $ GRHS [g'] rhs' }
 cvtpair (PatG gs,rhs)    = do { gs' <- cvtStmts gs; rhs' <- cvtl rhs
 			      ; returnL $ GRHS gs' rhs' }

@@ -519,10 +519,10 @@ zonkGRHSs :: ZonkEnv
 zonkGRHSs env zBody (GRHSs grhss binds)
   = zonkLocalBinds env binds   	`thenM` \ (new_env, new_binds) ->
     let
-	zonk_grhs (GRHS guarded rhs)
-	  = zonkStmts new_env zBody guarded     `thenM` \ (env2, new_guarded) ->
-	    zBody env2 rhs                      `thenM` \ new_rhs ->
-	    returnM (GRHS new_guarded new_rhs)
+        zonk_grhs (GRHS guarded rhs)
+          = zonkStmts new_env zonkLExpr guarded `thenM` \ (env2, new_guarded) ->
+            zBody env2 rhs                      `thenM` \ new_rhs ->
+            returnM (GRHS new_guarded new_rhs)
     in
     mappM (wrapLocM zonk_grhs) grhss 	`thenM` \ new_grhss ->
     returnM (GRHSs new_grhss new_binds)
@@ -827,7 +827,7 @@ zonkStmts env zBody (s:ss) = do { (env1, s')  <- wrapLocSndM (zonkStmt env zBody
 zonkStmt :: ZonkEnv 
          -> (ZonkEnv -> Located (body TcId) -> TcM (Located (body Id)))
          -> Stmt TcId (Located (body TcId)) -> TcM (ZonkEnv, Stmt Id (Located (body Id)))
-zonkStmt env zBody (ParStmt stmts_w_bndrs mzip_op bind_op)
+zonkStmt env _ (ParStmt stmts_w_bndrs mzip_op bind_op)
   = do { new_stmts_w_bndrs <- mapM zonk_branch stmts_w_bndrs
        ; let new_binders = [b | ParStmtBlock _ bs _ <- new_stmts_w_bndrs, b <- bs]
 	     env1 = extendIdZonkEnv env new_binders
@@ -836,7 +836,7 @@ zonkStmt env zBody (ParStmt stmts_w_bndrs mzip_op bind_op)
        ; return (env1, ParStmt new_stmts_w_bndrs new_mzip new_bind) }
   where
     zonk_branch (ParStmtBlock stmts bndrs return_op) 
-       = do { (env1, new_stmts) <- zonkStmts env zBody stmts
+       = do { (env1, new_stmts) <- zonkStmts env zonkLExpr stmts
             ; new_return <- zonkExpr env1 return_op
 	    ; return (ParStmtBlock new_stmts (zonkIdOccs env1 bndrs) new_return) }
 
@@ -863,22 +863,22 @@ zonkStmt env zBody (RecStmt { recS_stmts = segStmts, recS_later_ids = lvs, recS_
                          , recS_later_rets = new_later_rets
                          , recS_rec_rets = new_rec_rets, recS_ret_ty = new_ret_ty }) }
 
-zonkStmt env zBody (ExprStmt body then_op guard_op ty)
+zonkStmt env zBody (BodyStmt body then_op guard_op ty)
   = zBody env body              `thenM` \ new_body ->
     zonkExpr env then_op	`thenM` \ new_then ->
     zonkExpr env guard_op	`thenM` \ new_guard ->
     zonkTcTypeToType env ty	`thenM` \ new_ty ->
-    returnM (env, ExprStmt new_body new_then new_guard new_ty)
+    returnM (env, BodyStmt new_body new_then new_guard new_ty)
 
 zonkStmt env zBody (LastStmt body ret_op)
   = zBody env body              `thenM` \ new_body ->
     zonkExpr env ret_op         `thenM` \ new_ret ->
     returnM (env, LastStmt new_body new_ret)
 
-zonkStmt env zBody (TransStmt { trS_stmts = stmts, trS_bndrs = binderMap
+zonkStmt env _ (TransStmt { trS_stmts = stmts, trS_bndrs = binderMap
                               , trS_by = by, trS_form = form, trS_using = using
                               , trS_ret = return_op, trS_bind = bind_op, trS_fmap = liftM_op })
-  = do { (env', stmts') <- zonkStmts env zBody stmts 
+  = do { (env', stmts') <- zonkStmts env zonkLExpr stmts 
     ; binderMap' <- mappM (zonkBinderMapEntry env') binderMap
     ; by'        <- fmapMaybeM (zonkLExpr env') by
     ; using'     <- zonkLExpr env using

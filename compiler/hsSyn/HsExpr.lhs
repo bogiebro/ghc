@@ -156,7 +156,7 @@ data HsExpr id
   | HsDo        (HsStmtContext Name) -- The parameterisation is unimportant
                                      -- because in this context we never use
                                      -- the PatGuard or ParStmt variant
-                [LStmt id (LHsExpr id)]   -- "do":one or more stmts
+                [ExprLStmt id]       -- "do":one or more stmts
                 PostTcType           -- Type of the whole expression
 
   | ExplicitList                -- syntactic list
@@ -650,7 +650,7 @@ data HsCmd id
   | HsCmdLet    (HsLocalBinds id)               -- let(rec)
                 (LHsCmd  id)
 
-  | HsCmdDo     [LStmt id (LHsCmd id)]
+  | HsCmdDo     [CmdLStmt id]
                 PostTcType                      -- Type of the whole expression
   deriving (Data, Typeable)
 
@@ -841,7 +841,7 @@ data GRHSs id body
 type LGRHS id body = Located (GRHS id body)
 
 -- | Guarded Right Hand Side.
-data GRHS id body = GRHS [LStmt id body] -- Guards
+data GRHS id body = GRHS [GuardLStmt id] -- Guards
                          body            -- Right hand side
   deriving (Data, Typeable)
 \end{code}
@@ -927,30 +927,38 @@ pp_rhs ctxt rhs = matchSeparator ctxt <+> pprDeeper (ppr rhs)
 %************************************************************************
 
 \begin{code}
-type LStmt id body = Located (StmtLR id id body body)
-type LStmtLR idL idR bodyL bodyR = Located (StmtLR idL idR bodyL bodyR)
+type LStmt id body = Located (StmtLR id id body)
+type LStmtLR idL idR body = Located (StmtLR idL idR body)
 
-type Stmt id body = StmtLR id id body body
+type Stmt id body = StmtLR id id body
+
+type CmdLStmt   id = LStmt id (LHsCmd  id)
+type CmdStmt    id = Stmt  id (LHsCmd  id)
+type ExprLStmt  id = LStmt id (LHsExpr id)
+type ExprStmt   id = Stmt  id (LHsExpr id)
+
+type GuardLStmt id = LStmt id (LHsExpr id)
+type GuardStmt  id = Stmt  id (LHsExpr id)
 
 -- The SyntaxExprs in here are used *only* for do-notation and monad
 -- comprehensions, which have rebindable syntax. Otherwise they are unused.
-data StmtLR idL idR bodyL bodyR
+data StmtLR idL idR body -- body should always be (LHs**** idR)
   = LastStmt  -- Always the last Stmt in ListComp, MonadComp, PArrComp, 
     	      -- and (after the renamer) DoExpr, MDoExpr
               -- Not used for GhciStmt, PatGuard, which scope over other stuff
-               bodyR
+               body
                (SyntaxExpr idR)   -- The return operator, used only for MonadComp
 	       		   	  -- For ListComp, PArrComp, we use the baked-in 'return'
 				  -- For DoExpr, MDoExpr, we don't appply a 'return' at all
 	       		   	  -- See Note [Monad Comprehensions]
   | BindStmt (LPat idL)
-             bodyR
+             body
              (SyntaxExpr idR) -- The (>>=) operator; see Note [The type of bind]
              (SyntaxExpr idR) -- The fail operator
              -- The fail operator is noSyntaxExpr
              -- if the pattern match can't fail
 
-  | ExprStmt bodyR            -- See Note [ExprStmt]
+  | BodyStmt body             -- See Note [BodyStmt]
              (SyntaxExpr idR) -- The (>>) operator
              (SyntaxExpr idR) -- The `guard` operator; used only in MonadComp
                               -- See notes [Monad Comprehensions]
@@ -959,7 +967,7 @@ data StmtLR idL idR bodyL bodyR
   | LetStmt  (HsLocalBindsLR idL idR)
 
   -- ParStmts only occur in a list/monad comprehension
-  | ParStmt  [ParStmtBlock idL idR bodyL]
+  | ParStmt  [ParStmtBlock idL idR]
              (SyntaxExpr idR)           -- Polymorphic `mzip` for monad comprehensions
              (SyntaxExpr idR)           -- The `>>=` operator
                                         -- See notes [Monad Comprehensions]
@@ -968,7 +976,7 @@ data StmtLR idL idR bodyL bodyR
 
   | TransStmt {
       trS_form  :: TransForm,
-      trS_stmts :: [LStmt idL bodyL], -- Stmts to the *left* of the 'group'
+      trS_stmts :: [ExprLStmt idL],   -- Stmts to the *left* of the 'group'
 	            	              -- which generates the tuples to be grouped
 
       trS_bndrs :: [(idR, idR)],      -- See Note [TransStmt binder map]
@@ -986,7 +994,7 @@ data StmtLR idL idR bodyL bodyR
 
   -- Recursive statement (see Note [How RecStmt works] below)
   | RecStmt
-     { recS_stmts :: [LStmtLR idL idR bodyL bodyR]
+     { recS_stmts :: [LStmtLR idL idR body]
 
         -- The next two fields are only valid after renaming
      , recS_later_ids :: [idR] -- The ids are a subset of the variables bound by the
@@ -1026,9 +1034,9 @@ data TransForm	 -- The 'f' below is the 'using' function, 'e' is the by function
   | GroupForm	   -- then group using f   or    then group by e using f (depending on trS_by)
   deriving (Data, Typeable)
 
-data ParStmtBlock idL idR bodyL  -- TODO: should this be bodyR? to be changed in ParStmt def above
+data ParStmtBlock idL idR
   = ParStmtBlock 
-        [LStmt idL bodyL] 
+        [ExprLStmt idL]
         [idR]              -- The variables to be returned
         (SyntaxExpr idR)   -- The return operator
   deriving( Data, Typeable )
@@ -1063,20 +1071,20 @@ The [(idR,idR)] in a TransStmt behaves as follows:
     	  [ (x27:Int, x27:[Int]), ..., (z35:Bool, z35:[Bool]) ]
     Each pair has the same unique, but different *types*.
    
-Note [ExprStmt]
+Note [BodyStmt]
 ~~~~~~~~~~~~~~~
-ExprStmts are a bit tricky, because what they mean
+BodyStmts are a bit tricky, because what they mean
 depends on the context.  Consider the following contexts:
 
         A do expression of type (m res_ty)
         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        * ExprStmt E any_ty:   do { ....; E; ... }
+        * BodyStmt E any_ty:   do { ....; E; ... }
                 E :: m any_ty
           Translation: E >> ...
 
         A list comprehensions of type [elt_ty]
         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        * ExprStmt E Bool:   [ .. | .... E ]
+        * BodyStmt E Bool:   [ .. | .... E ]
                         [ .. | ..., E, ... ]
                         [ .. | .... | ..., E | ... ]
                 E :: Bool
@@ -1084,13 +1092,13 @@ depends on the context.  Consider the following contexts:
 
         A guard list, guarding a RHS of type rhs_ty
         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        * ExprStmt E BooParStmtBlockl:   f x | ..., E, ... = ...rhs...
+        * BodyStmt E BooParStmtBlockl:   f x | ..., E, ... = ...rhs...
                 E :: Bool
           Translation: if E then fail else ...
 
         A monad comprehension of type (m res_ty)
         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        * ExprStmt E Bool:   [ .. | .... E ]
+        * BodyStmt E Bool:   [ .. | .... E ]
                 E :: Bool
           Translation: guard E >> ...
 
@@ -1153,7 +1161,7 @@ In transform and grouping statements ('then ..' and 'then group ..') the
    =>
   f [ env | stmts ] >>= \bndrs -> [ body | rest ]
 
-ExprStmts require the 'Control.Monad.guard' function for boolean
+BodyStmts require the 'Control.Monad.guard' function for boolean
 expressions:
 
   [ body | exp, stmts ]
@@ -1171,20 +1179,20 @@ In any other context than 'MonadComp', the fields for most of these
 
 
 \begin{code}
-instance (OutputableBndr idL, OutputableBndr idR, Outputable body) 
-         => Outputable (ParStmtBlock idL idR body) where
+instance (OutputableBndr idL, OutputableBndr idR) 
+    => Outputable (ParStmtBlock idL idR) where
   ppr (ParStmtBlock stmts _ _) = interpp'SP stmts
 
-instance (OutputableBndr idL, OutputableBndr idR, Outputable bodyL, Outputable bodyR) 
-         => Outputable (StmtLR idL idR bodyL bodyR) where
+instance (OutputableBndr idL, OutputableBndr idR, Outputable body) 
+         => Outputable (StmtLR idL idR body) where
     ppr stmt = pprStmt stmt
 
-pprStmt :: (OutputableBndr idL, OutputableBndr idR, Outputable bodyL, Outputable bodyR)
-        => (StmtLR idL idR bodyL bodyR) -> SDoc
+pprStmt :: (OutputableBndr idL, OutputableBndr idR, Outputable body)
+        => (StmtLR idL idR body) -> SDoc
 pprStmt (LastStmt expr _)         = ifPprDebug (ptext (sLit "[last]")) <+> ppr expr
 pprStmt (BindStmt pat expr _ _)   = hsep [ppr pat, ptext (sLit "<-"), ppr expr]
 pprStmt (LetStmt binds)           = hsep [ptext (sLit "let"), pprBinds binds]
-pprStmt (ExprStmt expr _ _ _)     = ppr expr
+pprStmt (BodyStmt expr _ _ _)     = ppr expr
 pprStmt (ParStmt stmtss _ _)      = sep (punctuate (ptext (sLit " | ")) (map ppr stmtss))
 
 pprStmt (TransStmt { trS_stmts = stmts, trS_by = by, trS_using = using, trS_form = form })
@@ -1488,8 +1496,8 @@ pprMatchInCtxt :: (OutputableBndr idL, OutputableBndr idR, Outputable body)
 pprMatchInCtxt ctxt match  = hang (ptext (sLit "In") <+> pprMatchContext ctxt <> colon) 
 			     4 (pprMatch ctxt match)
 
-pprStmtInCtxt :: (OutputableBndr idL, OutputableBndr idR, Outputable bodyL, Outputable bodyR)
-   	       => HsStmtContext idL -> StmtLR idL idR bodyL bodyR -> SDoc
+pprStmtInCtxt :: (OutputableBndr idL, OutputableBndr idR, Outputable body)
+   	       => HsStmtContext idL -> StmtLR idL idR body -> SDoc
 pprStmtInCtxt ctxt (LastStmt e _)
   | isListCompExpr ctxt      -- For [ e | .. ], do not mutter about "stmts"
   = hang (ptext (sLit "In the expression:")) 2 (ppr e)

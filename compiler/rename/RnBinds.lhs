@@ -825,7 +825,7 @@ rnGRHS' ctxt rnBody (GRHS guards rhs)
 	-- expression, rather than a list of qualifiers as in the
 	-- Glasgow extension
     is_standard_guard []                       = True
-    is_standard_guard [L _ (ExprStmt _ _ _ _)] = True
+    is_standard_guard [L _ (BodyStmt _ _ _ _)] = True
     is_standard_guard _                        = False
 \end{code}
 

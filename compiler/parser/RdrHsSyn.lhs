@@ -859,8 +859,8 @@ checkCmdStmt _ (LastStmt e r) =
     checkCommand e >>= (\c -> return $ LastStmt c r)
 checkCmdStmt _ (BindStmt pat e b f) = 
     checkCommand e >>= (\c -> return $ BindStmt pat c b f)
-checkCmdStmt _ (ExprStmt e t g ty) = 
-    checkCommand e >>= (\c -> return $ ExprStmt c t g ty)
+checkCmdStmt _ (BodyStmt e t g ty) = 
+    checkCommand e >>= (\c -> return $ BodyStmt c t g ty)
 checkCmdStmt _ stmt@(RecStmt { recS_stmts = stmts }) = do
     ss <- mapM checkCmdLStmt stmts
     return $ stmt { recS_stmts = ss }
@@ -884,8 +884,8 @@ checkCmdGRHS = locMap $ const convert
   where 
     convert (GRHS stmts e) = do
         c <- checkCommand e
-        cmdStmts <- mapM checkCmdLStmt stmts
-        return $ GRHS cmdStmts c
+--        cmdStmts <- mapM checkCmdLStmt stmts
+        return $ GRHS {- cmdStmts -} stmts c
 
 
 cmdFail :: SrcSpan -> HsExpr RdrName -> P a

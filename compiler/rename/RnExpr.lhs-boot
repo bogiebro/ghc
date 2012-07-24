@@ -4,14 +4,17 @@ import HsSyn
 import Name     ( Name )
 import NameSet  ( FreeVars )
 import RdrName  ( RdrName )
+import SrcLoc   ( Located )
 import TcRnTypes
 
 rnLExpr :: LHsExpr RdrName
         -> RnM (LHsExpr Name, FreeVars)
 
-rnStmts :: --forall thing.
-           HsStmtContext Name -> [LStmt RdrName]
+rnStmts :: --forall thing body.
+           HsStmtContext Name 
+        -> (Located (body RdrName) -> RnM (Located (body Name), FreeVars))
+        -> [LStmt RdrName (Located (body RdrName))]
         -> ([Name] -> RnM (thing, FreeVars))
-        -> RnM (([LStmt Name], thing), FreeVars)
+        -> RnM (([LStmt Name (Located (body Name))], thing), FreeVars)   
 \end{code}
 

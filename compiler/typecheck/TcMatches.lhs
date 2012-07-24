@@ -345,10 +345,10 @@ tcStmtsAndThen ctxt stmt_chk (L loc stmt : stmts) res_ty thing_inside
 ---------------------------------------------------
 
 tcGuardStmt :: TcStmtChecker
-tcGuardStmt _ (ExprStmt guard _ _ _) res_ty thing_inside
+tcGuardStmt _ (BodyStmt guard _ _ _) res_ty thing_inside
   = do	{ guard' <- tcMonoExpr guard boolTy
 	; thing  <- thing_inside res_ty
-	; return (ExprStmt guard' noSyntaxExpr noSyntaxExpr boolTy, thing) }
+	; return (BodyStmt guard' noSyntaxExpr noSyntaxExpr boolTy, thing) }
 
 tcGuardStmt ctxt (BindStmt pat rhs _ _) res_ty thing_inside
   = do	{ (rhs', rhs_ty) <- tcInferRhoNC rhs	-- Stmt has a context already
@@ -391,10 +391,10 @@ tcLcStmt m_tc ctxt (BindStmt pat rhs _ _) elt_ty thing_inside
 	; return (BindStmt pat' rhs' noSyntaxExpr noSyntaxExpr, thing) }
 
 -- A boolean guard
-tcLcStmt _ _ (ExprStmt rhs _ _ _) elt_ty thing_inside
+tcLcStmt _ _ (BodyStmt rhs _ _ _) elt_ty thing_inside
   = do	{ rhs'  <- tcMonoExpr rhs boolTy
 	; thing <- thing_inside elt_ty
-	; return (ExprStmt rhs' noSyntaxExpr noSyntaxExpr boolTy, thing) }
+	; return (BodyStmt rhs' noSyntaxExpr noSyntaxExpr boolTy, thing) }
 
 -- ParStmt: See notes with tcMcStmt
 tcLcStmt m_tc ctxt (ParStmt bndr_stmts_s _ _) elt_ty thing_inside
@@ -522,7 +522,7 @@ tcMcStmt ctxt (BindStmt pat rhs bind_op fail_op) res_ty thing_inside
 --
 --   [ body | stmts, expr ]  ->  expr :: m Bool
 --
-tcMcStmt _ (ExprStmt rhs then_op guard_op _) res_ty thing_inside
+tcMcStmt _ (BodyStmt rhs then_op guard_op _) res_ty thing_inside
   = do	{ -- Deal with rebindable syntax:
           --    guard_op :: test_ty -> rhs_ty
           --    then_op  :: rhs_ty -> new_res_ty -> res_ty
@@ -536,7 +536,7 @@ tcMcStmt _ (ExprStmt rhs then_op guard_op _) res_ty thing_inside
         ; then_op'   <- tcSyntaxOp MCompOrigin then_op
 		                   (mkFunTys [rhs_ty, new_res_ty] res_ty)
 	; thing      <- thing_inside new_res_ty
-	; return (ExprStmt rhs' then_op' guard_op' rhs_ty, thing) }
+	; return (BodyStmt rhs' then_op' guard_op' rhs_ty, thing) }
 
 -- Grouping statements
 --
@@ -767,7 +767,7 @@ tcDoStmt ctxt (BindStmt pat rhs bind_op fail_op) res_ty thing_inside
 	; return (BindStmt pat' rhs' bind_op' fail_op', thing) }
 
 
-tcDoStmt _ (ExprStmt rhs then_op _ _) res_ty thing_inside
+tcDoStmt _ (BodyStmt rhs then_op _ _) res_ty thing_inside
   = do	{   	-- Deal with rebindable syntax; 
                 --   (>>) :: rhs_ty -> new_res_ty -> res_ty
 		-- See also Note [Treat rebindable syntax first]
@@ -778,7 +778,7 @@ tcDoStmt _ (ExprStmt rhs then_op _ _) res_ty thing_inside
 
         ; rhs' <- tcMonoExprNC rhs rhs_ty
 	; thing <- thing_inside new_res_ty
-	; return (ExprStmt rhs' then_op' noSyntaxExpr rhs_ty, thing) }
+	; return (BodyStmt rhs' then_op' noSyntaxExpr rhs_ty, thing) }
 
 tcDoStmt ctxt (RecStmt { recS_stmts = stmts, recS_later_ids = later_names
                        , recS_rec_ids = rec_names, recS_ret_fn = ret_op

@@ -50,7 +50,7 @@ module HsUtils(
   nlHsAppTy, nlHsTyVar, nlHsFunTy, nlHsTyConApp, 
 
   -- Stmts
-  mkTransformStmt, mkTransformByStmt, mkExprStmt, mkBindStmt, mkLastStmt,
+  mkTransformStmt, mkTransformByStmt, mkBodyStmt, mkBindStmt, mkLastStmt,
   emptyTransStmt, mkGroupUsingStmt, mkGroupByUsingStmt, 
   emptyRecStmt, mkRecStmt, 
 
@@ -178,18 +178,18 @@ mkParPat lp@(L loc p) | hsPatNeedsParens p = L loc (ParPat lp)
 mkHsIntegral   :: Integer -> PostTcType -> HsOverLit id
 mkHsFractional :: FractionalLit -> PostTcType -> HsOverLit id
 mkHsIsString   :: FastString -> PostTcType -> HsOverLit id
-mkHsDo         :: HsStmtContext Name -> [LStmt id (LHsExpr id)] -> HsExpr id
-mkHsComp       :: HsStmtContext Name -> [LStmt id (LHsExpr id)] -> LHsExpr id -> HsExpr id
+mkHsDo         :: HsStmtContext Name -> [ExprLStmt id] -> HsExpr id
+mkHsComp       :: HsStmtContext Name -> [ExprLStmt id] -> LHsExpr id -> HsExpr id
 
 mkNPat      :: HsOverLit id -> Maybe (SyntaxExpr id) -> Pat id
 mkNPlusKPat :: Located id -> HsOverLit id -> Pat id
 
-mkLastStmt :: Located (bodyR idR) -> StmtLR idL idR bodyL (Located (bodyR idR))
-mkExprStmt :: Located (bodyR idR) -> StmtLR idL idR bodyL (Located (bodyR idR))
-mkBindStmt :: LPat idL -> Located (bodyR idR) -> StmtLR idL idR bodyL (Located (bodyR idR))
+mkLastStmt :: Located (bodyR idR) -> StmtLR idL idR (Located (bodyR idR))
+mkBodyStmt :: Located (bodyR idR) -> StmtLR idL idR (Located (bodyR idR))
+mkBindStmt :: LPat idL -> Located (bodyR idR) -> StmtLR idL idR (Located (bodyR idR))
 
-emptyRecStmt :: StmtLR idL idR bodyL bodyR
-mkRecStmt    :: [LStmtLR idL idR bodyL bodyR] -> StmtLR idL idR bodyL bodyR
+emptyRecStmt :: StmtLR idL idR bodyR
+mkRecStmt    :: [LStmtLR idL idR bodyR] -> StmtLR idL idR bodyR
 
 
 mkHsIntegral   i       = OverLit (HsIntegral   i)  noRebindableInfo noSyntaxExpr
@@ -210,16 +210,16 @@ mkHsIf c a b = HsIf (Just noSyntaxExpr) c a b
 mkNPat lit neg     = NPat lit neg noSyntaxExpr
 mkNPlusKPat id lit = NPlusKPat id lit noSyntaxExpr noSyntaxExpr
 
-mkTransformStmt    :: [LStmt idL (Located (bodyL idL))] -> LHsExpr idR
-                   -> StmtLR idL idR (Located (bodyL idL)) (Located (bodyR idR))
-mkTransformByStmt  :: [LStmt idL (Located (bodyL idL))] -> LHsExpr idR -> LHsExpr idR
-                   -> StmtLR idL idR (Located (bodyL idL)) (Located (bodyR idR))
-mkGroupUsingStmt   :: [LStmt idL (Located (bodyL idL))]                -> LHsExpr idR
-                   -> StmtLR idL idR (Located (bodyL idL)) (Located (bodyR idR))
-mkGroupByUsingStmt :: [LStmt idL (Located (bodyL idL))] -> LHsExpr idR -> LHsExpr idR
-                   -> StmtLR idL idR (Located (bodyL idL)) (Located (bodyR idR))
+mkTransformStmt    :: [ExprLStmt idL] -> LHsExpr idR
+                   -> StmtLR idL idR (LHsExpr idL)
+mkTransformByStmt  :: [ExprLStmt idL] -> LHsExpr idR -> LHsExpr idR
+                   -> StmtLR idL idR (LHsExpr idL)
+mkGroupUsingStmt   :: [ExprLStmt idL]                -> LHsExpr idR
+                   -> StmtLR idL idR (LHsExpr idL)
+mkGroupByUsingStmt :: [ExprLStmt idL] -> LHsExpr idR -> LHsExpr idR
+                   -> StmtLR idL idR (LHsExpr idL)
 
-emptyTransStmt :: StmtLR idL idR bodyL bodyR
+emptyTransStmt :: StmtLR idL idR (LHsExpr idR)
 emptyTransStmt = TransStmt { trS_form = panic "emptyTransStmt: form"
                            , trS_stmts = [], trS_bndrs = [] 
                            , trS_by = Nothing, trS_using = noLoc noSyntaxExpr
@@ -230,9 +230,9 @@ mkTransformByStmt  ss u b = emptyTransStmt { trS_form = ThenForm,  trS_stmts = s
 mkGroupUsingStmt   ss u   = emptyTransStmt { trS_form = GroupForm, trS_stmts = ss, trS_using = u }
 mkGroupByUsingStmt ss b u = emptyTransStmt { trS_form = GroupForm, trS_stmts = ss, trS_using = u, trS_by = Just b }
 
-mkLastStmt expr	    = LastStmt expr noSyntaxExpr
-mkExprStmt expr	    = ExprStmt expr noSyntaxExpr noSyntaxExpr placeHolderType
-mkBindStmt pat expr = BindStmt pat expr noSyntaxExpr noSyntaxExpr
+mkLastStmt body     = LastStmt body noSyntaxExpr
+mkBodyStmt body     = BodyStmt body noSyntaxExpr noSyntaxExpr placeHolderType
+mkBindStmt pat body = BindStmt pat body noSyntaxExpr noSyntaxExpr
 
 emptyRecStmt = RecStmt { recS_stmts = [], recS_later_ids = [], recS_rec_ids = []
                        , recS_ret_fn = noSyntaxExpr, recS_mfix_fn = noSyntaxExpr
@@ -525,20 +525,20 @@ collectMethodBinders binds = foldrBag get [] binds
        -- Someone else complains about non-FunBinds
 
 ----------------- Statements --------------------------
-collectLStmtsBinders :: [LStmtLR idL idR bodyL bodyR] -> [idL]
+collectLStmtsBinders :: [LStmtLR idL idR body] -> [idL]
 collectLStmtsBinders = concatMap collectLStmtBinders
 
-collectStmtsBinders :: [StmtLR idL idR bodyL bodyR] -> [idL]
+collectStmtsBinders :: [StmtLR idL idR body] -> [idL]
 collectStmtsBinders = concatMap collectStmtBinders
 
-collectLStmtBinders :: LStmtLR idL idR bodyL bodyR -> [idL]
+collectLStmtBinders :: LStmtLR idL idR body -> [idL]
 collectLStmtBinders = collectStmtBinders . unLoc
 
-collectStmtBinders :: StmtLR idL idR bodyL bodyR -> [idL]
+collectStmtBinders :: StmtLR idL idR body -> [idL]
   -- Id Binders for a Stmt... [but what about pattern-sig type vars]?
 collectStmtBinders (BindStmt pat _ _ _) = collectPatBinders pat
 collectStmtBinders (LetStmt binds)      = collectLocalBinders binds
-collectStmtBinders (ExprStmt {})        = []
+collectStmtBinders (BodyStmt {})        = []
 collectStmtBinders (LastStmt {})        = []
 collectStmtBinders (ParStmt xs _ _)     = collectLStmtsBinders
                                         $ [s | ParStmtBlock ss _ _ <- xs, s <- ss]
@@ -706,15 +706,15 @@ The main purpose is to find names introduced by record wildcards so that we can 
 warning the user when they don't use those names (#4404)
 
 \begin{code}
-lStmtsImplicits :: [LStmtLR Name idR (bodyL Name) (bodyR idR)] -> NameSet
+lStmtsImplicits :: [LStmtLR Name idR (Located (body idR))] -> NameSet
 lStmtsImplicits = hs_lstmts
   where
-    hs_lstmts :: [LStmtLR Name idR (bodyL Name) (bodyR idR)] -> NameSet
+    hs_lstmts :: [LStmtLR Name idR (Located (body idR))] -> NameSet
     hs_lstmts = foldr (\stmt rest -> unionNameSets (hs_stmt (unLoc stmt)) rest) emptyNameSet
     
     hs_stmt (BindStmt pat _ _ _) = lPatImplicits pat
     hs_stmt (LetStmt binds)      = hs_local_binds binds
-    hs_stmt (ExprStmt {})        = emptyNameSet
+    hs_stmt (BodyStmt {})        = emptyNameSet
     hs_stmt (LastStmt {})        = emptyNameSet
     hs_stmt (ParStmt xs _ _)     = hs_lstmts [s | ParStmtBlock ss _ _ <- xs, s <- ss]
     hs_stmt (TransStmt { trS_stmts = stmts }) = hs_lstmts stmts

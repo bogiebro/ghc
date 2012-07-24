@@ -1709,7 +1709,7 @@ stmtlist :: { Located [LStmt RdrName (LHsExpr RdrName)] }
 --      do { ;; s ; s ; ; s ;; }
 -- The last Stmt should be an expression, but that's hard to enforce
 -- here, because we need too much lookahead if we see do { e ; }
--- So we use ExprStmts throughout, and switch the last one over
+-- So we use BodyStmts throughout, and switch the last one over
 -- in ParseUtils.checkDo instead
 stmts :: { Located [LStmt RdrName (LHsExpr RdrName)] }
         : stmt stmts_help               { LL ($1 : unLoc $2) }
@@ -1732,7 +1732,7 @@ stmt  :: { LStmt RdrName (LHsExpr RdrName) }
 
 qual  :: { LStmt RdrName (LHsExpr RdrName) }
     : pat '<-' exp                      { LL $ mkBindStmt $1 $3 }
-    | exp                                   { L1 $ mkExprStmt $1 }
+    | exp                                   { L1 $ mkBodyStmt $1 }
     | 'let' binds                       { LL $ LetStmt (unLoc $2) }
 
 -----------------------------------------------------------------------------
