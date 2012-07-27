@@ -939,13 +939,15 @@ type ExprStmt   id = Stmt  id (LHsExpr id)
 
 type GuardLStmt id = LStmt id (LHsExpr id)
 type GuardStmt  id = Stmt  id (LHsExpr id)
+type GhciLStmt  id = LStmt id (LHsExpr id)
+type GhciStmt   id = Stmt  id (LHsExpr id)
 
 -- The SyntaxExprs in here are used *only* for do-notation and monad
 -- comprehensions, which have rebindable syntax. Otherwise they are unused.
 data StmtLR idL idR body -- body should always be (LHs**** idR)
   = LastStmt  -- Always the last Stmt in ListComp, MonadComp, PArrComp, 
     	      -- and (after the renamer) DoExpr, MDoExpr
-              -- Not used for GhciStmt, PatGuard, which scope over other stuff
+              -- Not used for GhciStmtCtxt, PatGuard, which scope over other stuff
                body
                (SyntaxExpr idR)   -- The return operator, used only for MonadComp
 	       		   	  -- For ListComp, PArrComp, we use the baked-in 'return'
@@ -1223,14 +1225,14 @@ pprBy (Just e) = ptext (sLit "by") <+> ppr e
 
 pprDo :: (OutputableBndr id, Outputable body)
       => HsStmtContext any -> [LStmt id body] -> SDoc
-pprDo DoExpr      stmts = ptext (sLit "do")  <+> ppr_do_stmts stmts
-pprDo GhciStmt    stmts = ptext (sLit "do")  <+> ppr_do_stmts stmts
-pprDo ArrowExpr   stmts = ptext (sLit "do")  <+> ppr_do_stmts stmts
-pprDo MDoExpr     stmts = ptext (sLit "mdo") <+> ppr_do_stmts stmts
-pprDo ListComp    stmts = brackets    $ pprComp stmts
-pprDo PArrComp    stmts = paBrackets $ pprComp stmts
-pprDo MonadComp   stmts = brackets    $ pprComp stmts
-pprDo _           _     = panic "pprDo" -- PatGuard, ParStmtCxt
+pprDo DoExpr        stmts = ptext (sLit "do")  <+> ppr_do_stmts stmts
+pprDo GhciStmtCtxt  stmts = ptext (sLit "do")  <+> ppr_do_stmts stmts
+pprDo ArrowExpr     stmts = ptext (sLit "do")  <+> ppr_do_stmts stmts
+pprDo MDoExpr       stmts = ptext (sLit "mdo") <+> ppr_do_stmts stmts
+pprDo ListComp      stmts = brackets    $ pprComp stmts
+pprDo PArrComp      stmts = paBrackets  $ pprComp stmts
+pprDo MonadComp     stmts = brackets    $ pprComp stmts
+pprDo _             _     = panic "pprDo" -- PatGuard, ParStmtCxt
 
 ppr_do_stmts :: (OutputableBndr id, Outputable body) 
              => [LStmt id body] -> SDoc
@@ -1375,7 +1377,7 @@ data HsStmtContext id
   | MDoExpr                              -- mdo { ... }  ie recursive do-expression 
   | ArrowExpr				 -- do-notation in an arrow-command context
 
-  | GhciStmt				 -- A command-line Stmt in GHCi pat <- rhs
+  | GhciStmtCtxt                         -- A command-line Stmt in GHCi pat <- rhs
   | PatGuard (HsMatchContext id)         -- Pattern guard for specified thing
   | ParStmtCtxt (HsStmtContext id)       -- A branch of a parallel stmt
   | TransStmtCtxt (HsStmtContext id)     -- A branch of a transform stmt
@@ -1440,14 +1442,14 @@ pprAStmtContext ctxt = article <+> pprStmtContext ctxt
     pp_an = ptext (sLit "an")
     pp_a  = ptext (sLit "a")
     article = case ctxt of
-                  MDoExpr  -> pp_an
-                  PArrComp -> pp_an
-		  GhciStmt -> pp_an
-                  _        -> pp_a
+                  MDoExpr       -> pp_an
+                  PArrComp      -> pp_an
+                  GhciStmtCtxt  -> pp_an
+                  _             -> pp_a
 
 
 -----------------
-pprStmtContext GhciStmt        = ptext (sLit "interactive GHCi command")
+pprStmtContext GhciStmtCtxt    = ptext (sLit "interactive GHCi command")
 pprStmtContext DoExpr          = ptext (sLit "'do' block")
 pprStmtContext MDoExpr         = ptext (sLit "'mdo' block")
 pprStmtContext ArrowExpr       = ptext (sLit "'do' block in an arrow command")
@@ -1481,7 +1483,7 @@ matchContextErrString ThPatQuote                 = panic "matchContextErrString"
 matchContextErrString (StmtCtxt (ParStmtCtxt c))   = matchContextErrString (StmtCtxt c)
 matchContextErrString (StmtCtxt (TransStmtCtxt c)) = matchContextErrString (StmtCtxt c)
 matchContextErrString (StmtCtxt (PatGuard _))      = ptext (sLit "pattern guard")
-matchContextErrString (StmtCtxt GhciStmt)          = ptext (sLit "interactive GHCi command")
+matchContextErrString (StmtCtxt GhciStmtCtxt)      = ptext (sLit "interactive GHCi command")
 matchContextErrString (StmtCtxt DoExpr)            = ptext (sLit "'do' block")
 matchContextErrString (StmtCtxt ArrowExpr)         = ptext (sLit "'do' block")
 matchContextErrString (StmtCtxt MDoExpr)           = ptext (sLit "'mdo' block")

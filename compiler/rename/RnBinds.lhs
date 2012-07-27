@@ -444,7 +444,7 @@ rnBind _ (L loc bind@(PatBind { pat_lhs = pat
                               , bind_fvs = pat_fvs }))
   = setSrcSpan loc $ 
     do	{ mod <- getModule
-        ; (grhss', rhs_fvs) <- rnGRHSs PatBindRhs grhss
+        ; (grhss', rhs_fvs) <- rnGRHSs PatBindRhs rnLExpr grhss
 
 		-- No scoped type variables for pattern bindings
 	; let all_fvs = pat_fvs `plusFV` rhs_fvs
@@ -467,7 +467,7 @@ rnBind sig_fn (L loc bind@(FunBind { fun_id = name
 
 	; (matches', rhs_fvs) <- bindSigTyVarsFV (sig_fn plain_name) $
 				-- bindSigTyVars tests for Opt_ScopedTyVars
-			         rnMatchGroup (FunRhs plain_name is_infix) matches
+			         rnMatchGroup (FunRhs plain_name is_infix) rnLExpr matches
 	; when is_infix $ checkPrecMatch plain_name matches'
 
         ; mod <- getModule
@@ -600,7 +600,7 @@ rnMethodBind cls sig_fn
         -- We use the selector name as the binder
 
     (new_matches, fvs) <- bindSigTyVarsFV (sig_fn plain_name) $
-                          mapFvRn (rnMatch (FunRhs plain_name is_infix)) matches
+                          mapFvRn (rnMatch (FunRhs plain_name is_infix) rnLExpr) matches
     let new_group = MatchGroup new_matches placeHolderType
 
     when is_infix $ checkPrecMatch plain_name new_group
@@ -746,24 +746,24 @@ okHsSig ctxt (L _ sig)
 %************************************************************************
 
 \begin{code}
-rnMatchGroup :: HsMatchContext Name 
-             -> (body RdrName -> RnM (body Name, FreeVars))
-             -> MatchGroup RdrName body 
-             -> RnM (MatchGroup Name body, FreeVars)
+rnMatchGroup :: Outputable (body RdrName) => HsMatchContext Name
+             -> (Located (body RdrName) -> RnM (Located (body Name), FreeVars))
+             -> MatchGroup RdrName (Located (body RdrName))
+             -> RnM (MatchGroup Name (Located (body Name)), FreeVars)
 rnMatchGroup ctxt rnBody (MatchGroup ms _) 
   = do { (new_ms, ms_fvs) <- mapFvRn (rnMatch ctxt rnBody) ms
        ; return (MatchGroup new_ms placeHolderType, ms_fvs) }
 
-rnMatch :: HsMatchContext Name 
-        -> (body RdrName -> RnM (body Name, FreeVars))
-        -> LMatch RdrName body 
-        -> RnM (LMatch Name body, FreeVars)
+rnMatch :: Outputable (body RdrName) => HsMatchContext Name
+        -> (Located (body RdrName) -> RnM (Located (body Name), FreeVars))
+        -> LMatch RdrName (Located (body RdrName))
+        -> RnM (LMatch Name (Located (body Name)), FreeVars)
 rnMatch ctxt rnBody = wrapLocFstM (rnMatch' ctxt rnBody)
 
-rnMatch' :: HsMatchContext Name 
-         -> (body RdrName -> RnM (body Name, FreeVars))
-         -> Match RdrName body 
-         -> RnM (Match Name body, FreeVars)
+rnMatch' :: Outputable (body RdrName) => HsMatchContext Name 
+         -> (Located (body RdrName) -> RnM (Located (body Name), FreeVars))
+         -> Match RdrName (Located (body RdrName))
+         -> RnM (Match Name (Located (body Name)), FreeVars)
 rnMatch' ctxt rnBody match@(Match pats maybe_rhs_sig grhss)
   = do 	{ 	-- Result type signatures are no longer supported
 	  case maybe_rhs_sig of	
@@ -777,7 +777,7 @@ rnMatch' ctxt rnBody match@(Match pats maybe_rhs_sig grhss)
 
 	; return (Match pats' Nothing grhss', grhss_fvs) }}
 
-resSigErr :: HsMatchContext Name -> Match RdrName body -> HsType RdrName -> SDoc 
+resSigErr :: Outputable body => HsMatchContext Name -> Match RdrName body -> HsType RdrName -> SDoc 
 resSigErr ctxt match ty
    = vcat [ ptext (sLit "Illegal result type signature") <+> quotes (ppr ty)
 	  , nest 2 $ ptext (sLit "Result signatures are no longer supported in pattern matches")
@@ -793,27 +793,27 @@ resSigErr ctxt match ty
 
 \begin{code}
 rnGRHSs :: HsMatchContext Name 
-        -> (body RdrName -> RnM (body Name, FreeVars))
-        -> GRHSs RdrName body 
-        -> RnM (GRHSs Name body, FreeVars)
+        -> (Located (body RdrName) -> RnM (Located (body Name), FreeVars))
+        -> GRHSs RdrName (Located (body RdrName))
+        -> RnM (GRHSs Name (Located (body Name)), FreeVars)
 rnGRHSs ctxt rnBody (GRHSs grhss binds)
   = rnLocalBindsAndThen binds	$ \ binds' -> do
     (grhss', fvGRHSs) <- mapFvRn (rnGRHS ctxt rnBody) grhss
     return (GRHSs grhss' binds', fvGRHSs)
 
 rnGRHS :: HsMatchContext Name 
-       -> (body RdrName -> RnM (body Name, FreeVars))
-       -> LGRHS RdrName body 
-       -> RnM (LGRHS Name body, FreeVars)
+       -> (Located (body RdrName) -> RnM (Located (body Name), FreeVars))
+       -> LGRHS RdrName (Located (body RdrName))
+       -> RnM (LGRHS Name (Located (body Name)), FreeVars)
 rnGRHS ctxt rnBody = wrapLocFstM (rnGRHS' ctxt rnBody)
 
 rnGRHS' :: HsMatchContext Name 
-        -> (body RdrName -> RnM (body Name, FreeVars))
-        -> GRHS RdrName body 
-        -> RnM (GRHS Name body, FreeVars)
+        -> (Located (body RdrName) -> RnM (Located (body Name), FreeVars))
+        -> GRHS RdrName (Located (body RdrName))
+        -> RnM (GRHS Name (Located (body Name)), FreeVars)
 rnGRHS' ctxt rnBody (GRHS guards rhs)
   = do	{ pattern_guards_allowed <- xoptM Opt_PatternGuards
-        ; ((guards', rhs'), fvs) <- rnStmts (PatGuard ctxt) rnBody guards $ \ _ ->
+        ; ((guards', rhs'), fvs) <- rnStmts (PatGuard ctxt) rnLExpr guards $ \ _ ->
 				    rnBody rhs
 
 	; unless (pattern_guards_allowed || is_standard_guard guards')
@@ -866,7 +866,7 @@ bindsInHsBootFile mbinds
   = hang (ptext (sLit "Bindings in hs-boot files are not allowed"))
        2 (ppr mbinds)
 
-nonStdGuardErr :: [LStmtLR Name Name body] -> SDoc
+nonStdGuardErr :: Outputable body => [LStmtLR Name Name body] -> SDoc
 nonStdGuardErr guards
   = hang (ptext (sLit "accepting non-standard pattern guards (use -XPatternGuards to suppress this message)"))
        4 (interpp'SP guards)

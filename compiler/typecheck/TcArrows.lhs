@@ -100,10 +100,10 @@ tcCmdTop env (L loc (HsCmdTop cmd _ _ names)) cmd_stk res_ty
 ----------------------------------------
 tcCmd  :: CmdEnv -> LHsCmd Name -> (CmdStack, TcTauType) -> TcM (LHsCmd TcId)
 	-- The main recursive function
-tcCmd env (L loc expr) res_ty
+tcCmd env (L loc cmd) res_ty
   = setSrcSpan loc $ do
-	{ expr' <- tc_cmd env expr res_ty
-	; return (L loc expr') }
+	{ cmd' <- tc_cmd env cmd res_ty
+	; return (L loc cmd') }
 
 tc_cmd :: CmdEnv -> HsCmd Name  -> (CmdStack, TcTauType) -> TcM (HsCmd TcId)
 tc_cmd env (HsCmdPar cmd) res_ty
@@ -147,7 +147,7 @@ tc_cmd env (HsCmdIf (Just fun) pred b1 b2) res_ty -- Rebindable syntax for if
   	; pred' <- tcMonoExpr pred pred_ty
 	; b1'   <- tcCmd env b1 res_ty
 	; b2'   <- tcCmd env b2 res_ty
-	; return (HsIf (Just fun') pred' b1' b2')
+        ; return (HsCmdIf (Just fun') pred' b1' b2')
     }
 
 -------------------------------------------
@@ -225,10 +225,10 @@ tc_cmd env cmd@(HsCmdLam (MatchGroup [L mtch_loc (match@(Match pats _maybe_rhs_s
 -------------------------------------------
 -- 		Do notation
 
-tc_cmd env cmd@(HsCmdDo do_or_lc stmts _) (cmd_stk, res_ty)
+tc_cmd env cmd@(HsCmdDo stmts _) (cmd_stk, res_ty)
   = do 	{ checkTc (null cmd_stk) (nonEmptyCmdStkErr cmd)
-	; stmts' <- tcStmts do_or_lc (tcArrDoStmt env) stmts res_ty 
-	; return (HsCmdDo do_or_lc stmts' res_ty) }
+	; stmts' <- tcStmts ArrowExpr (tcArrDoStmt env) stmts res_ty 
+	; return (HsCmdDo stmts' res_ty) }
   where
 
 
@@ -265,7 +265,7 @@ tc_cmd env cmd@(HsCmdArrForm expr fixity cmd_args) (cmd_stk, res_ty)
 	; cmds' <- mapM (tc_cmd w_tv) cmds_w_tys
 
         ; let wrap = WpTyLam w_tv <.> mkWpLet inst_binds
-	; return (HsArrForm (mkLHsWrap wrap expr') fixity cmds') }
+	; return (HsCmdArrForm (mkLHsWrap wrap expr') fixity cmds') }
   where
  	-- Make the types	
 	--	b, ((e,s1) .. sm), s
@@ -331,7 +331,7 @@ tc_cmd _ cmd _
 --	(a) RecStmts, and
 --	(b) no rebindable syntax
 
-tcArrDoStmt :: CmdEnv -> TcStmtChecker
+tcArrDoStmt :: CmdEnv -> TcCmdStmtChecker
 tcArrDoStmt env _ (LastStmt rhs _) res_ty thing_inside
   = do	{ rhs' <- tcCmd env rhs ([], res_ty)
 	; thing <- thing_inside (panic "tcArrDoStmt")
@@ -411,15 +411,15 @@ arrowTyConKind = mkArrowKinds [liftedTypeKind, liftedTypeKind] liftedTypeKind
 %************************************************************************
 
 \begin{code}
-cmdCtxt :: HsExpr Name -> SDoc
+cmdCtxt :: HsCmd Name -> SDoc
 cmdCtxt cmd = ptext (sLit "In the command:") <+> ppr cmd
 
-nonEmptyCmdStkErr :: HsExpr Name -> SDoc
+nonEmptyCmdStkErr :: HsCmd Name -> SDoc
 nonEmptyCmdStkErr cmd
   = hang (ptext (sLit "Non-empty command stack at command:"))
        2 (ppr cmd)
 
-kappaUnderflow :: HsExpr Name -> SDoc
+kappaUnderflow :: HsCmd Name -> SDoc
 kappaUnderflow cmd
   = hang (ptext (sLit "Command stack underflow at command:"))
        2 (ppr cmd)

@@ -687,7 +687,7 @@ not_op_pat (ConPatIn _ (InfixCon _ _)) = False
 not_op_pat _        	               = True
 
 --------------------------------------
-checkPrecMatch :: Name -> MatchGroup Name -> RnM ()
+checkPrecMatch :: Name -> MatchGroup Name body -> RnM ()
   -- Check precedence of a function binding written infix
   --   eg  a `op` b `C` c = ...
   -- See comments with rnExpr (OpApp ...) about "deriving"

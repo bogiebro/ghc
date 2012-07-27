@@ -313,12 +313,12 @@ dsExpr (HsLet binds body) = do
 -- We need the `ListComp' form to use `deListComp' (rather than the "do" form)
 -- because the interpretation of `stmts' depends on what sort of thing it is.
 --
-dsExpr (HsDo ListComp  stmts res_ty) = dsListComp stmts res_ty
-dsExpr (HsDo PArrComp  stmts _)      = dsPArrComp (map unLoc stmts)
-dsExpr (HsDo DoExpr    stmts _)      = dsDo stmts 
-dsExpr (HsDo GhciStmt  stmts _)      = dsDo stmts 
-dsExpr (HsDo MDoExpr   stmts _)      = dsDo stmts 
-dsExpr (HsDo MonadComp stmts _)      = dsMonadComp stmts
+dsExpr (HsDo ListComp     stmts res_ty) = dsListComp stmts res_ty
+dsExpr (HsDo PArrComp     stmts _)      = dsPArrComp (map unLoc stmts)
+dsExpr (HsDo DoExpr       stmts _)      = dsDo stmts 
+dsExpr (HsDo GhciStmtCtxt stmts _)      = dsDo stmts 
+dsExpr (HsDo MDoExpr      stmts _)      = dsDo stmts 
+dsExpr (HsDo MonadComp    stmts _)      = dsMonadComp stmts
 
 dsExpr (HsIf mb_fun guard_expr then_expr else_expr)
   = do { pred <- dsLExpr guard_expr

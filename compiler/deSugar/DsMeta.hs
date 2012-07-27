@@ -893,7 +893,7 @@ repE (HsLet bs e)         = do { (ss,ds) <- repBinds bs
 
 -- FIXME: I haven't got the types here right yet
 repE e@(HsDo ctxt sts _)
- | case ctxt of { DoExpr -> True; GhciStmt -> True; _ -> False }
+ | case ctxt of { DoExpr -> True; GhciStmtCtxt -> True; _ -> False }
  = do { (ss,zs) <- repLSts sts;
         e'      <- repDoE (nonEmptyCoreList zs);
         wrapGenSyms ss e' }
@@ -951,7 +951,7 @@ repE e 			 = notHandled "Expression form" (ppr e)
 -----------------------------------------------------------------------------
 -- Building representations of auxillary structures like Match, Clause, Stmt,
 
-repMatchTup ::  LMatch Name -> DsM (Core TH.MatchQ)
+repMatchTup ::  LMatch Name (LHsExpr Name) -> DsM (Core TH.MatchQ)
 repMatchTup (L _ (Match [p] _ (GRHSs guards wheres))) =
   do { ss1 <- mkGenSyms (collectPatBinders p)
      ; addBinds ss1 $ do {
@@ -963,7 +963,7 @@ repMatchTup (L _ (Match [p] _ (GRHSs guards wheres))) =
      ; wrapGenSyms (ss1++ss2) match }}}
 repMatchTup _ = panic "repMatchTup: case alt with more than one arg"
 
-repClauseTup ::  LMatch Name -> DsM (Core TH.ClauseQ)
+repClauseTup ::  LMatch Name (LHsExpr Name) -> DsM (Core TH.ClauseQ)
 repClauseTup (L _ (Match ps _ (GRHSs guards wheres))) =
   do { ss1 <- mkGenSyms (collectPatsBinders ps)
      ; addBinds ss1 $ do {
@@ -974,7 +974,7 @@ repClauseTup (L _ (Match ps _ (GRHSs guards wheres))) =
      ; clause <- repClause ps1 gs ds
      ; wrapGenSyms (ss1++ss2) clause }}}
 
-repGuards ::  [LGRHS Name] ->  DsM (Core TH.BodyQ)
+repGuards ::  [LGRHS Name (LHsExpr Name)] ->  DsM (Core TH.BodyQ)
 repGuards [L _ (GRHS [] e)]
   = do {a <- repLE e; repNormal a }
 repGuards other
@@ -983,7 +983,7 @@ repGuards other
 	 gd <- repGuarded (nonEmptyCoreList ys);
      wrapGenSyms (concat xs) gd }
   where
-    process :: LGRHS Name -> DsM ([GenSymBind], (Core (TH.Q (TH.Guard, TH.Exp))))
+    process :: LGRHS Name (LHsExpr Name) -> DsM ([GenSymBind], (Core (TH.Q (TH.Guard, TH.Exp))))
     process (L _ (GRHS [L _ (BodyStmt e1 _ _ _)] e2))
            = do { x <- repLNormalGE e1 e2;
                   return ([], x) }
@@ -1026,10 +1026,10 @@ repFields (HsRecFields { rec_flds = flds })
 -- The helper function repSts computes the translation of each sub expression
 -- and a bunch of prefix bindings denoting the dynamic renaming.
 
-repLSts :: [LStmt Name] -> DsM ([GenSymBind], [Core TH.StmtQ])
+repLSts :: [LStmt Name (LHsExpr Name)] -> DsM ([GenSymBind], [Core TH.StmtQ])
 repLSts stmts = repSts (map unLoc stmts)
 
-repSts :: [Stmt Name] -> DsM ([GenSymBind], [Core TH.StmtQ])
+repSts :: [Stmt Name (LHsExpr Name)] -> DsM ([GenSymBind], [Core TH.StmtQ])
 repSts (BindStmt p e _ _ : ss) =
    do { e2 <- repLE e
       ; ss1 <- mkGenSyms (collectPatBinders p)
@@ -1161,7 +1161,7 @@ rep_bind (L _ (AbsBinds {}))  = panic "rep_bind: AbsBinds"
 -- Haskell Template's Meta.Exp type so we punt if it isn't a simple thing like
 -- (\ p1 .. pn -> exp) by causing an error.
 
-repLambda :: LMatch Name -> DsM (Core TH.ExpQ)
+repLambda :: LMatch Name (LHsExpr Name) -> DsM (Core TH.ExpQ)
 repLambda (L _ (Match ps _ (GRHSs [L _ (GRHS [] e)] EmptyLocalBinds)))
  = do { let bndrs = collectPatsBinders ps ;
       ; ss  <- mkGenSyms bndrs
