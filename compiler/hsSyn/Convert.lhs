@@ -458,7 +458,7 @@ cvtLocalDecs doc ds
        ; unless (null bads) (failWith (mkBadDecMsg doc bads))
        ; return (HsValBinds (ValBindsIn (listToBag binds) sigs)) }
 
-cvtClause :: TH.Clause -> CvtM (Hs.LMatch RdrName)
+cvtClause :: TH.Clause -> CvtM (Hs.LMatch RdrName (LHsExpr RdrName))
 cvtClause (Clause ps body wheres)
   = do	{ ps' <- cvtPats ps
 	; g'  <- cvtGuard body
@@ -645,10 +645,10 @@ cvtHsDo do_or_lc stmts
                          , nest 2 $ Outputable.ppr stmt
 			 , ptext (sLit "(It should be an expression.)") ]
 
-cvtStmts :: [TH.Stmt] -> CvtM [Hs.LStmt RdrName]
+cvtStmts :: [TH.Stmt] -> CvtM [Hs.LStmt RdrName (LHsExpr RdrName)]
 cvtStmts = mapM cvtStmt
 
-cvtStmt :: TH.Stmt -> CvtM (Hs.LStmt RdrName)
+cvtStmt :: TH.Stmt -> CvtM (Hs.LStmt RdrName (LHsExpr RdrName))
 cvtStmt (NoBindS e)    = do { e' <- cvtl e; returnL $ mkBodyStmt e' }
 cvtStmt (TH.BindS p e) = do { p' <- cvtPat p; e' <- cvtl e; returnL $ mkBindStmt p' e' }
 cvtStmt (TH.LetS ds)   = do { ds' <- cvtLocalDecs (ptext (sLit "a let binding")) ds
@@ -657,18 +657,18 @@ cvtStmt (TH.ParS dss)  = do { dss' <- mapM cvt_one dss; returnL $ ParStmt dss' n
 		       where
 			 cvt_one ds = do { ds' <- cvtStmts ds; return (ParStmtBlock ds' undefined noSyntaxExpr) }
 
-cvtMatch :: TH.Match -> CvtM (Hs.LMatch RdrName)
+cvtMatch :: TH.Match -> CvtM (Hs.LMatch RdrName (LHsExpr RdrName))
 cvtMatch (TH.Match p body decs)
   = do 	{ p' <- cvtPat p
 	; g' <- cvtGuard body
 	; decs' <- cvtLocalDecs (ptext (sLit "a where clause")) decs
 	; returnL $ Hs.Match [p'] Nothing (GRHSs g' decs') }
 
-cvtGuard :: TH.Body -> CvtM [LGRHS RdrName]
+cvtGuard :: TH.Body -> CvtM [LGRHS RdrName (LHsExpr RdrName)]
 cvtGuard (GuardedB pairs) = mapM cvtpair pairs
 cvtGuard (NormalB e)      = do { e' <- cvtl e; g' <- returnL $ GRHS [] e'; return [g'] }
 
-cvtpair :: (TH.Guard, TH.Exp) -> CvtM (LGRHS RdrName)
+cvtpair :: (TH.Guard, TH.Exp) -> CvtM (LGRHS RdrName (LHsExpr RdrName))
 cvtpair (NormalG ge,rhs) = do { ge' <- cvtl ge; rhs' <- cvtl rhs
 			      ; g' <- returnL $ mkBodyStmt ge'
 			      ; returnL $ GRHS [g'] rhs' }

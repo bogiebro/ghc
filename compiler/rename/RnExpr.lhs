@@ -291,6 +291,7 @@ rnExpr (ArithSeq _ seq)
 rnExpr (PArrSeq _ seq)
   = rnArithSeq seq	 `thenM` \ (new_seq, fvs) ->
     return (PArrSeq noPostTcExpr new_seq, fvs)
+
 \end{code}
 
 These three are pattern syntax appearing in expressions.
@@ -316,6 +317,15 @@ rnExpr (HsProc pat body)
     rnPat ProcExpr pat $ \ pat' ->
     rnCmdTop body	         `thenM` \ (body',fvBody) ->
     return (HsProc pat' body', fvBody)
+
+-- Ideally, this would be done in parsing, but to keep parsing simple, we do it here.
+rnExpr e@(HsArrApp _ _ _ _ _)
+  = failWith (vcat [ptext (sLit "The arrow command"), nest 2 (ppr e), 
+                    ptext (sLit "was found where an expression was expected")])
+
+rnExpr e@(HsArrForm _ _ _)
+  = failWith (vcat [ptext (sLit "The arrow command"), nest 2 (ppr e), 
+                    ptext (sLit "was found where an expression was expected")])
 
 rnExpr other = pprPanic "rnExpr: unexpected expression" (ppr other)
 	-- HsWrap

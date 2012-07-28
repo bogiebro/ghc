@@ -851,16 +851,17 @@ checkCmd _ (OpApp eLeft op fixity eRight) = do
 
 checkCmd l e = cmdFail l e
 
-checkCmdLStmt :: LStmt RdrName (LHsExpr RdrName) -> P (LStmt RdrName (LHsCmd RdrName))
+checkCmdLStmt :: ExprLStmt RdrName -> P (CmdLStmt RdrName)
 checkCmdLStmt = locMap checkCmdStmt
 
-checkCmdStmt :: SrcSpan -> Stmt RdrName (LHsExpr RdrName) -> P (Stmt RdrName (LHsCmd RdrName))
+checkCmdStmt :: SrcSpan -> ExprStmt RdrName -> P (CmdStmt RdrName)
 checkCmdStmt _ (LastStmt e r) = 
     checkCommand e >>= (\c -> return $ LastStmt c r)
 checkCmdStmt _ (BindStmt pat e b f) = 
     checkCommand e >>= (\c -> return $ BindStmt pat c b f)
 checkCmdStmt _ (BodyStmt e t g ty) = 
     checkCommand e >>= (\c -> return $ BodyStmt c t g ty)
+checkCmdStmt _ (LetStmt bnds) = return $ LetStmt bnds
 checkCmdStmt _ stmt@(RecStmt { recS_stmts = stmts }) = do
     ss <- mapM checkCmdLStmt stmts
     return $ stmt { recS_stmts = ss }
